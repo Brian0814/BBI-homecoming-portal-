@@ -8,8 +8,11 @@ import { OrderForm, PACKAGE_OPTIONS } from "../types";
 import { 
   Users, Trash2, Search, Download, Printer, ArrowUpDown, ChevronDown, 
   Layers, CreditCard, Sparkles, Filter, MoreHorizontal, ShoppingCart, 
-  MapPin, Phone, Mail, FileText, ArrowLeft, Ticket, ShoppingBag, Eye, Calendar
+  MapPin, Phone, Mail, FileText, ArrowLeft, Ticket, ShoppingBag, Eye, Calendar,
+  Loader2, MailCheck, ShieldCheck, MailWarning
 } from "lucide-react";
+import { getPaymentMilestones } from "../lib/paymentUtils";
+import { sendGmailMessage, generatePaymentReminderEmail } from "../lib/gmailUtils";
 
 interface HistoryEntry {
   ref: string;
@@ -19,6 +22,8 @@ interface HistoryEntry {
 
 interface AdminPortalProps {
   onBackToForm: () => void;
+  googleToken: string | null;
+  googleUser: any | null;
 }
 
 // Solid 5 premium seed mock records to make the portal active, robust, and completely functional on launch!
@@ -125,7 +130,11 @@ const SEED_MOCK_DATA: HistoryEntry[] = [
   }
 ];
 
-export default function AdminPortal({ onBackToForm }: AdminPortalProps) {
+export default function AdminPortal({
+  onBackToForm,
+  googleToken,
+  googleUser
+}: AdminPortalProps) {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterPackage, setFilterPackage] = useState("all");
@@ -134,6 +143,10 @@ export default function AdminPortal({ onBackToForm }: AdminPortalProps) {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [selectedAttendee, setSelectedAttendee] = useState<HistoryEntry | null>(null);
   const [deleteConfirmRef, setDeleteConfirmRef] = useState<string | null>(null);
+
+  // Senders/reminders status tracking
+  const [reminderSendStatus, setReminderSendStatus] = useState<Record<string, "idle" | "sending" | "sent" | "failed">>({});
+  const [reminderErrorMsg, setReminderErrorMsg] = useState<string>("");
 
   // Load history from localStorage or seed mock records if empty
   useEffect(() => {
@@ -179,6 +192,26 @@ export default function AdminPortal({ onBackToForm }: AdminPortalProps) {
     const balanceDue = total - depositDue;
 
     return { total, depositDue, balanceDue };
+  };
+
+  const handleSendReminder = async (entry: HistoryEntry) => {
+    if (!googleToken) return;
+    const ref = entry.ref;
+    setReminderSendStatus((prev) => ({ ...prev, [ref]: "sending" }));
+    setReminderErrorMsg("");
+
+    try {
+      const { balanceDue } = calculateDepositAndBalance(entry.formData);
+      const subject = `BBI Homecoming 2026 - Payment Milestone Reminder [${ref}]`;
+      const htmlBody = generatePaymentReminderEmail(entry.formData, ref);
+
+      await sendGmailMessage(googleToken, entry.formData.email, subject, htmlBody);
+      setReminderSendStatus((prev) => ({ ...prev, [ref]: "sent" }));
+    } catch (err: any) {
+      console.error("Failed to send payment reminder:", err);
+      setReminderSendStatus((prev) => ({ ...prev, [ref]: "failed" }));
+      setReminderErrorMsg(err?.message || "Unknown Gmail service error. Ensure your account connection is authorized.");
+    }
   };
 
   // Delete handler
@@ -654,26 +687,109 @@ export default function AdminPortal({ onBackToForm }: AdminPortalProps) {
                 </p>
               </div>
 
+              {/* Automated Reminder Email Dispatch Desk */}
+              <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 space-y-2.5 shadow-2xs">
+                <span className="text-[10px] font-black uppercase text-brand-blue tracking-wider block flex items-center gap-1">
+                  📧 Gmail Reminder Terminal
+                </span>
+                
+                {!googleToken ? (
+                  <div className="space-y-1.5">
+                    <p className="text-[10.5px] text-gray-500 leading-normal font-medium">
+                      Link your Google account in the dashboard top HUD to enable one-click automated payment alerts from your own email.
+                    </p>
+                    <div className="inline-flex items-center gap-1.5 text-[10px] font-bold text-gray-500 bg-slate-100 p-1.5 px-3 rounded-lg border border-gray-200">
+                      <MailWarning className="w-4 h-4 text-gray-400" />
+                      <span>Reminder dispatching currently offline</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-[10.5px] text-gray-500 leading-normal font-medium">
+                      Send a committee-styled payment deadline notification to this member (<span className="text-brand-blue font-bold font-mono">{selectedAttendee.formData.email}</span>).
+                    </p>
+                    
+                    {reminderSendStatus[selectedAttendee.ref] === "sending" ? (
+                      <button
+                        type="button"
+                        disabled
+                        className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-lg bg-slate-150 text-gray-400 font-bold text-xs border border-gray-250"
+                      >
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-blue" />
+                        <span>Sending payment notification...</span>
+                      </button>
+                    ) : reminderSendStatus[selectedAttendee.ref] === "sent" ? (
+                      <div className="space-y-1.5 animate-in zoom-in-95 duration-150">
+                        <div className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-lg bg-emerald-50 text-emerald-800 font-extrabold text-xs border border-emerald-200">
+                          <MailCheck className="w-4 h-4 text-emerald-600 animate-bounce" />
+                          <span>Success! Alert sent under {googleUser?.email}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleSendReminder(selectedAttendee)}
+                          className="w-full text-center text-[10px] text-slate-400 hover:text-slate-650 hover:underline font-semibold block pt-0.5"
+                        >
+                          Send another reminder?
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleSendReminder(selectedAttendee)}
+                          className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-brand-blue hover:bg-brand-blue-dark text-white font-extrabold text-xs shadow-xs transition-all cursor-pointer min-h-[38px]"
+                        >
+                          <Mail className="w-3.5 h-3.5 text-white" />
+                          <span>Send Payment Reminder Email</span>
+                        </button>
+                        
+                        {reminderSendStatus[selectedAttendee.ref] === "failed" && (
+                          <div className="bg-red-50 border border-red-150 p-2 rounded-lg text-left text-red-700 space-y-0.5">
+                            <span className="font-extrabold block text-[9.5px] uppercase text-red-500 tracking-wider">⚠️ Dispatch error</span>
+                            <p className="text-[10px] leading-normal font-semibold">{reminderErrorMsg || "SMTP connection failed."}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* Homecoming Treasury Milestone Balance Sheet */}
               {(() => {
-                const { total, depositDue, balanceDue } = calculateDepositAndBalance(selectedAttendee.formData);
+                const { total } = calculateDepositAndBalance(selectedAttendee.formData);
+                const memberMilestones = getPaymentMilestones(selectedAttendee.formData.selectedPackageId, selectedAttendee.formData.addDetroitJacket);
                 return (
-                  <div className="border-t border-gray-100 pt-3 space-y-2">
+                  <div className="border-t border-gray-100 pt-3 space-y-2.5">
                     <span className="text-[10px] uppercase font-extrabold text-slate-500 tracking-wider block">Treasury Payment Milestones</span>
-                    <div className="bg-slate-50 hover:bg-slate-100/70 border border-gray-250 p-3 rounded-xl space-y-2 text-xs transition-colors duration-150">
+                    <div className="bg-slate-50 border border-gray-250 p-3 rounded-xl space-y-2.5 text-xs">
                       <div className="flex items-center justify-between font-extrabold text-slate-800">
                         <span>Total Registered Cost:</span>
                         <span className="font-mono text-gray-950 text-sm">${total}</span>
                       </div>
-                      <div className="border-t border-gray-200 pt-2 space-y-1 text-[11px]">
-                        <div className="flex items-center justify-between font-bold text-blue-755 hover:text-brand-blue">
-                          <span>🟢 Required Deposit (by July 19):</span>
-                          <span className="font-mono text-brand-blue font-black">${depositDue}</span>
-                        </div>
-                        <div className="flex items-center justify-between font-bold text-amber-900">
-                          <span>⏰ Remaining Balance (by Sept 4):</span>
-                          <span className="font-mono text-amber-700 font-black">${balanceDue}</span>
-                        </div>
+                      <div className="border-t border-gray-200/80 pt-2 space-y-2">
+                        {memberMilestones.map((m, mIdx) => (
+                          <div key={mIdx} className="flex flex-col gap-1 bg-white/70 border border-gray-150 p-2 rounded-lg">
+                            <div className="flex items-center justify-between text-[11px] font-bold">
+                              <span className="text-gray-800">{m.date} Milestone</span>
+                              <span className={`font-mono font-black ${m.amount === 0 ? "text-emerald-600" : "text-brand-blue"}`}>
+                                ${m.amount}
+                              </span>
+                            </div>
+                            {m.amount > 0 ? (
+                              <div className="text-[9.5px] text-gray-450 font-medium flex flex-wrap gap-x-2 gap-y-0.5 leading-tight">
+                                {m.items.map((it, itIdx) => (
+                                  <span key={itIdx} className="inline-flex items-center gap-0.5 whitespace-nowrap">
+                                    <span className="w-1 h-1 rounded-full bg-slate-300" />
+                                    {it.name}: ${it.amount}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-[9.5px] text-emerald-600 font-bold block leading-none">Fully cleared • No installment</span>
+                            )}
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>

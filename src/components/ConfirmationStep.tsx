@@ -5,19 +5,24 @@
 
 import React from "react";
 import { OrderForm, PACKAGE_OPTIONS } from "../types";
-import { CheckCircle2, Copy, MapPin, Phone, Mail, Clock, Printer, Ticket, ShoppingBag, Receipt } from "lucide-react";
+import { CheckCircle2, Copy, MapPin, Phone, Mail, Clock, Printer, Ticket, ShoppingBag, Receipt, Calendar, MailCheck } from "lucide-react";
 import BBIChapterLogo from "./BBIChapterLogo";
+import { getPaymentMilestones } from "../lib/paymentUtils";
 
 interface ConfirmationStepProps {
   formData: OrderForm;
   orderRefNumber: string;
   onReset: () => void;
+  emailStatus?: "idle" | "sending" | "sent" | "failed";
+  emailErrorMsg?: string;
 }
 
 export default function ConfirmationStep({
   formData,
   orderRefNumber,
-  onReset
+  onReset,
+  emailStatus = "idle",
+  emailErrorMsg = ""
 }: ConfirmationStepProps) {
   const selectedPackage = PACKAGE_OPTIONS.find((p) => p.id === formData.selectedPackageId);
 
@@ -88,6 +93,33 @@ export default function ConfirmationStep({
         <p className="text-[11px] text-gray-400 mt-3 font-medium col-span-full">
           Prepare this reference number for package collection on-campus and check-in at tailgate environments.
         </p>
+
+        {/* Email delivery feedback HUD */}
+        <div className="mt-4 pt-3.5 border-t border-slate-200 text-xs text-center">
+          {emailStatus === "sending" && (
+            <div className="flex items-center justify-center gap-2 text-amber-600 font-bold animate-pulse">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+              <span>Sending invoice receipt to your inbox...</span>
+            </div>
+          )}
+          {emailStatus === "sent" && (
+            <div className="flex items-center justify-center gap-2 text-emerald-600 font-bold bg-emerald-50 border border-emerald-100 p-2.5 rounded-lg">
+              <MailCheck className="w-4 h-4 text-emerald-500" />
+              <span>Automated confirmation sent to your email at {formData.email}!</span>
+            </div>
+          )}
+          {emailStatus === "failed" && (
+            <div className="text-left text-red-700 bg-red-50 border border-red-100 p-2.5 rounded-lg space-y-1">
+              <span className="font-extrabold block text-[10px] uppercase text-red-500 tracking-wider">⚠️ Email dispatch offline</span>
+              <p className="text-[10.5px] text-red-600 leading-normal">{emailErrorMsg || "Gmail SMTP send failed. Please verify auth credentials."}</p>
+            </div>
+          )}
+          {emailStatus === "idle" && (
+            <div className="text-[10.5px] text-gray-550 italic font-medium leading-normal bg-slate-100/50 p-2 rounded-lg border border-slate-200/50">
+              🔗 Organizer Offline: Link Google account in the header HUD to enable immediate automatic email receipts.
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="border-t border-gray-100 pt-6">
@@ -128,6 +160,37 @@ export default function ConfirmationStep({
                 <p className="text-[10px] text-amber-700 font-medium mt-2.5">
                   * Note: {selectedPackage.note}
                 </p>
+              )}
+            </div>
+
+            {/* Add Ons segment */}
+            <div className="border-t border-gray-100 pt-3">
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-2">
+                Add Ons
+              </span>
+              {!formData.addFootballTicket && !formData.addDetroitJacket ? (
+                <span className="text-xs text-gray-400 italic">None selected</span>
+              ) : (
+                <ul className="space-y-1.5 text-xs text-slate-700 font-semibold">
+                  {formData.addFootballTicket && (
+                    <li className="flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full flex-shrink-0" />
+                        Football Game Ticket RSVP
+                      </span>
+                      <span className="font-mono text-emerald-600 font-black">$0</span>
+                    </li>
+                  )}
+                  {formData.addDetroitJacket && (
+                    <li className="flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 bg-blue-500 rounded-full flex-shrink-0" />
+                        Carhartt Style Jacket ({formData.jacketSize})
+                      </span>
+                      <span className="font-mono text-brand-blue font-black">+$135</span>
+                    </li>
+                  )}
+                </ul>
               )}
             </div>
           </div>
@@ -280,6 +343,66 @@ export default function ConfirmationStep({
                     ${remainingBalance}
                   </span>
                 </div>
+              </div>
+            </div>
+
+            {/* Detailed Installment Payment Schedule */}
+            <div className="bg-white border border-gray-200 rounded-xl p-4.5 space-y-3.5 shadow-2xs">
+              <div className="flex items-center gap-2 border-b border-gray-100 pb-2.5">
+                <Calendar className="w-4 h-4 text-brand-blue" />
+                <span className="text-[10px] text-gray-500 font-extrabold uppercase tracking-widest block">
+                  Detailed Treasury Installment Schedule
+                </span>
+                <span className="ml-auto text-[9px] bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-black">
+                  Ref: {selectedPackage?.id ? selectedPackage.name.slice(0, 1) + " Package" : ""}
+                </span>
+              </div>
+              
+              <p className="text-[11px] text-gray-500 leading-normal">
+                To simplify preparation, the committee has mapped out the official itemized installment steps. All payments sent should align with these dates:
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 mt-2">
+                {getPaymentMilestones(formData.selectedPackageId, formData.addDetroitJacket).map((m, idx) => (
+                  <div 
+                    key={idx} 
+                    className={`p-3 rounded-lg border flex flex-col justify-between transition-all ${
+                      m.amount === 0 
+                        ? "bg-slate-50/50 border-gray-150" 
+                        : "bg-linear-to-b from-slate-50 to-white hover:to-slate-50 border-gray-200 hover:border-gray-350 hover:shadow-2xs"
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between border-b border-gray-100/60 pb-1.5 mb-2">
+                        <span className="font-display font-black text-xs text-slate-900">{m.date}</span>
+                        <span className={`font-mono text-xs font-black ${m.amount === 0 ? "text-emerald-600" : "text-brand-blue"}`}>
+                          ${m.amount}
+                        </span>
+                      </div>
+                      
+                      {m.amount === 0 ? (
+                        <div className="space-y-1 py-1">
+                          <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-xs uppercase tracking-wider inline-block">
+                            Cleared & Fully Settled
+                          </span>
+                          <p className="text-[10px] text-gray-400">No installment due on this date for your selected package tier.</p>
+                        </div>
+                      ) : (
+                        <ul className="space-y-1">
+                          {m.items.map((item, itemIdx) => (
+                            <li key={itemIdx} className="flex items-center justify-between text-[10px] text-gray-500 font-semibold leading-normal">
+                              <span className="flex items-center gap-1.5 max-w-[75%]">
+                                <span className={`w-1 h-1 rounded-full ${item.isDeposit ? "bg-brand-blue/60" : "bg-indigo-400/60"}`} />
+                                <span className="truncate" title={item.name}>{item.name}</span>
+                              </span>
+                              <span className="font-mono text-gray-700 font-bold">${item.amount}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 

@@ -29,66 +29,68 @@ export default function BBIChapterLogo({ size = 300, className, ...props }: BBIC
           <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#00183b" floodOpacity="0.25" />
         </filter>
         
-        {/* Curved path for "PHI BETA SIGMA FRATERNITY, INC." */}
+        {/* Curved path for "PHI BETA SIGMA FRATERNITY, INC." - perfectly centered on radius 118 */}
         <path
           id="text-path-top"
-          d="M 45 150 A 105 105 0 0 1 255 150"
+          d="M 32 150 A 118 118 0 0 1 268 150"
           fill="none"
         />
         
-        {/* Curved path for bottom principles "BROTHERHOOD • SCHOLARSHIP • SERVICE" */}
+        {/* Curved path for bottom principles - perfectly centered on radius 118 */}
         <path
           id="text-path-bottom"
-          d="M 262 153 A 112 112 0 0 1 38 153"
+          d="M 268 150 A 118 118 0 0 1 32 150"
           fill="none"
         />
       </defs>
 
-      {/* Main Backing Circle in Royal Blue */}
+      {/* Main Backing Circle in Royal Blue (Official Phi Beta Sigma Blue color) */}
       <circle cx="150" cy="150" r="140" fill="#003399" filter="url(#logo-shadow)" />
 
       {/* Outer White Border Line */}
       <circle cx="150" cy="150" r="136" fill="none" stroke="#FFFFFF" strokeWidth="2.5" />
       
-      {/* Inner White Ring Backing */}
-      <circle cx="150" cy="150" r="115" fill="#FFFFFF" />
-      <circle cx="150" cy="150" r="113" fill="none" stroke="#003399" strokeWidth="1.5" />
+      {/* Outer Blue Text Ring lies in the space between radius 136 and radius 102.
+          This ring background is just the main blue background. */}
 
-      {/* Inner Blue Center Emblem Background */}
-      <circle cx="150" cy="150" r="92" fill="#FFFFFF" stroke="#003399" strokeWidth="3.5" />
+      {/* Inner White Plate Backing (Radius 102 as per the exact design boundary) */}
+      <circle cx="150" cy="150" r="102" fill="#FFFFFF" />
+
+      {/* Inner Blue Outline inside the white area */}
+      <circle cx="150" cy="150" r="97" fill="none" stroke="#003399" strokeWidth="2.0" />
 
       {/* Curved Text upper-half: "PHI BETA SIGMA FRATERNITY, INC." in sans-serif uppercase */}
-      <text fill="#FFFFFF" fontSize="13.5" fontWeight="800" fontFamily='"Outfit", "Inter", sans-serif' letterSpacing="1.2">
+      <text fill="#FFFFFF" fontSize="11.5" fontWeight="900" fontFamily='"Outfit", "Inter", "Helvetica", sans-serif' letterSpacing="1.5">
         <textPath href="#text-path-top" startOffset="50%" textAnchor="middle">
           PHI BETA SIGMA FRATERNITY, INC.
         </textPath>
       </text>
 
-      {/* Outer Blue Text lower-half: "BROTHERHOOD • SCHOLARSHIP • SERVICE" */}
-      <text fill="#FFFFFF" fontSize="11" fontWeight="700" fontFamily='"Outfit", "Inter", sans-serif' letterSpacing="1.2">
+      {/* Outer Blue Text lower-half: "BROTHERHOOD · SCHOLARSHIP · SERVICE" */}
+      <text fill="#FFFFFF" fontSize="9" fontWeight="900" fontFamily='"Outfit", "Inter", "Helvetica", sans-serif' letterSpacing="1.2">
         <textPath href="#text-path-bottom" startOffset="50%" textAnchor="middle">
-          BROTHERHOOD • SCHOLARSHIP • SERVICE
+          BROTHERHOOD · SCHOLARSHIP · SERVICE
         </textPath>
       </text>
 
-      {/* Side Decorative Element: Left Stars */}
-      <g fill="#FFFFFF" transform="translate(19, 137)">
-        <polygon points="5,0 6.5,3.5 10,4 7,6.5 8,10 5,8 2,10 3,6.5 0,4 3.5,3.5" />
-        <polygon points="12,-16 13.5,-12.5 17,-12 14,-9.5 15,-6 12,-8 9,-6 10,-9.5 7,-12 10.5,-12.5" transform="scale(0.85)" />
-        <polygon points="12,16 13.5,19.5 17,20 14,22.5 15,26 12,24 9,26 10,22.5 7,20 10.5,19.5" transform="scale(0.85)" />
+      {/* Side Decorative Element: Left Stars (Exact 3-star stack aligned to curve) */}
+      <g fill="#FFFFFF">
+        <path d="M 0,-6 L 1.8,-1.8 L 6.2,-1.8 L 2.6,0.8 L 4,5.2 L 0,2.6 L -4,5.2 L -2.6,0.8 L -6.2,-1.8 L -1.8,-1.8 Z" transform="translate(38, 134)" />
+        <path d="M 0,-6 L 1.8,-1.8 L 6.2,-1.8 L 2.6,0.8 L 4,5.2 L 0,2.6 L -4,5.2 L -2.6,0.8 L -6.2,-1.8 L -1.8,-1.8 Z" transform="translate(33, 150)" />
+        <path d="M 0,-6 L 1.8,-1.8 L 6.2,-1.8 L 2.6,0.8 L 4,5.2 L 0,2.6 L -4,5.2 L -2.6,0.8 L -6.2,-1.8 L -1.8,-1.8 Z" transform="translate(38, 166)" />
       </g>
 
-      {/* Side Decorative Element: Right Bars */}
-      <g stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round">
-        <line x1="262" y1="135" x2="276" y2="135" />
-        <line x1="261" y1="145" x2="277" y2="145" />
-        <line x1="262" y1="155" x2="276" y2="155" />
+      {/* Side Decorative Element: Right Bars (3 vertical parallel lines in white) */}
+      <g stroke="#FFFFFF" strokeWidth="2.5" strokeLinecap="round">
+        <line x1="262" y1="138" x2="262" y2="162" />
+        <line x1="267" y1="133" x2="267" y2="167" />
+        <line x1="272" y1="138" x2="272" y2="162" />
       </g>
 
       {/* --- CENTER EMBLEM ELEMENTS --- */}
       
       {/* Wave lines at the bottom of the inner core representing coastal BBI environment */}
-      <g fill="none" stroke="#003399" strokeWidth="2.5" strokeLinecap="round">
+      <g fill="none" stroke="#003399" strokeWidth="3.2" strokeLinecap="round">
         {/* Wave 1 */}
         <path d="M 68 175 C 100 162, 110 188, 150 175 C 190 162, 200 188, 232 175" />
         {/* Wave 2 */}
@@ -97,7 +99,7 @@ export default function BBIChapterLogo({ size = 300, className, ...props }: BBIC
         <path d="M 72 195 C 100 186, 110 204, 150 195 C 190 186, 200 204, 228 195" />
       </g>
 
-      {/* Vector Palm Trees in Chapter Core */}
+      {/* Vector Palm Trees in Chapter Core (Pure Royal Blue) */}
       {/* Palm Tree Left */}
       <g transform="translate(100, 75)" fill="#003399">
         {/* Trunk */}
@@ -139,17 +141,17 @@ export default function BBIChapterLogo({ size = 300, className, ...props }: BBIC
 
       {/* Large Chapter Text BBI */}
       <text
-        x="150"
-        y="152"
-        fontFamily='"Outfit", "Inter", sans-serif'
-        fontSize="65"
-        fontWeight="800"
+        x="151"
+        y="151"
+        fontFamily='"Outfit", "Inter", "Helvetica", sans-serif'
+        fontSize="66"
+        fontWeight="900"
         fill="#003399"
         stroke="#FFFFFF"
         strokeWidth="6"
         paintOrder="stroke"
         textAnchor="middle"
-        letterSpacing="2"
+        letterSpacing="2.5"
       >
         BBI
       </text>
@@ -157,10 +159,10 @@ export default function BBIChapterLogo({ size = 300, className, ...props }: BBIC
       {/* Est 2004 Segment */}
       <text
         x="150"
-        y="226"
-        fontFamily='"Outfit", "Inter", sans-serif'
-        fontSize="17.5"
-        fontWeight="bold"
+        y="223"
+        fontFamily='"Outfit", "Inter", "Helvetica", sans-serif'
+        fontSize="17"
+        fontWeight="900"
         fill="#003399"
         textAnchor="middle"
         letterSpacing="1"
@@ -168,16 +170,21 @@ export default function BBIChapterLogo({ size = 300, className, ...props }: BBIC
         EST. 2004
       </text>
 
+      {/* Underline Flourish Segment: line, down triangle, line */}
+      <line x1="85" y1="231" x2="135" y2="231" stroke="#003399" strokeWidth="2.0" strokeLinecap="round" />
+      <polygon points="144,228 156,228 150,234" fill="#003399" />
+      <line x1="165" y1="231" x2="215" y2="231" stroke="#003399" strokeWidth="2.0" strokeLinecap="round" />
+
       {/* Chapter Text */}
       <text
         x="150"
-        y="248"
-        fontFamily='"Outfit", "Inter", sans-serif'
-        fontSize="10"
-        fontWeight="800"
+        y="247"
+        fontFamily='"Outfit", "Inter", "Helvetica", sans-serif'
+        fontSize="10.5"
+        fontWeight="900"
         fill="#003399"
         textAnchor="middle"
-        letterSpacing="2.5"
+        letterSpacing="3"
       >
         CHAPTER
       </text>
