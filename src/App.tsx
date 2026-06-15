@@ -12,11 +12,7 @@ import PackageStep from "./components/PackageStep";
 import ReviewStep from "./components/ReviewStep";
 import ConfirmationStep from "./components/ConfirmationStep";
 import AdminPortal from "./components/AdminPortal";
-import { ChevronLeft, ChevronRight, Check, PackageOpen, LayoutDashboard, ShoppingCart, Sparkles, Lock, Eye, EyeOff, AlertCircle, RotateCcw, MailCheck } from "lucide-react";
-import { initAuth, googleSignIn, logout } from "./lib/firebaseAuth";
-import { sendGmailMessage, generateConfirmationEmail } from "./lib/gmailUtils";
-import GmailAuthWidget from "./components/GmailAuthWidget";
-import { User } from "firebase/auth";
+import { ChevronLeft, ChevronRight, Check, PackageOpen, LayoutDashboard, ShoppingCart, Sparkles, Lock, Eye, EyeOff, AlertCircle, RotateCcw } from "lucide-react";
 
 const LOCAL_STORAGE_KEY = "bbi_homecoming_2026_order";
 const ORDER_HISTORY_KEY = "bbi_homecoming_2026_history";
@@ -76,59 +72,6 @@ export default function App() {
     jacketEntireLineName: "",
     jacketLineNumber: ""
   });
-
-  // Google Auth integration states for Gmail API
-  const [googleUser, setGoogleUser] = useState<User | null>(null);
-  const [googleToken, setGoogleToken] = useState<string | null>(null);
-  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
-  const [emailStatus, setEmailStatus] = useState<"idle" | "sending" | "sent" | "failed">("idle");
-  const [emailErrorMsg, setEmailErrorMsg] = useState<string>("");
-
-  useEffect(() => {
-    const unsubscribe = initAuth(
-      (user, token) => {
-        setGoogleUser(user);
-        setGoogleToken(token);
-        setIsAuthLoading(false);
-      },
-      () => {
-        setGoogleUser(null);
-        setGoogleToken(null);
-        setIsAuthLoading(false);
-      }
-    );
-    return () => {
-      if (unsubscribe) unsubscribe();
-    };
-  }, []);
-
-  const handleGoogleSignIn = async () => {
-    setIsAuthLoading(true);
-    try {
-      const result = await googleSignIn();
-      if (result) {
-        setGoogleUser(result.user);
-        setGoogleToken(result.accessToken);
-      }
-    } catch (err) {
-      console.error("Sign in failed:", err);
-    } finally {
-      setIsAuthLoading(false);
-    }
-  };
-
-  const handleGoogleSignOut = async () => {
-    setIsAuthLoading(true);
-    try {
-      await logout();
-      setGoogleUser(null);
-      setGoogleToken(null);
-    } catch (err) {
-      console.error("Sign out failed:", err);
-    } finally {
-      setIsAuthLoading(false);
-    }
-  };
 
   const [activeStep, setActiveStep] = useState<number>(0);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -335,23 +278,6 @@ export default function App() {
         console.error("Could not write order history:", e);
       }
 
-      // Asynchronously trigger Gmail dispatch to ensure page enters confirmation state instantly
-      if (googleToken) {
-        setEmailStatus("sending");
-        setEmailErrorMsg("");
-        sendGmailMessage(googleToken, formData.email, `BBI Homecoming 2026 - Registration Confirmed [${refCode}]`, generateConfirmationEmail(formData, refCode))
-          .then(() => {
-            setEmailStatus("sent");
-          })
-          .catch((err) => {
-            console.error("Failed to dispatch email:", err);
-            setEmailStatus("failed");
-            setEmailErrorMsg(err?.message || "Unknown Gmail service error");
-          });
-      } else {
-        setEmailStatus("idle");
-      }
-
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
@@ -535,11 +461,6 @@ export default function App() {
             <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 sm:p-8 animate-in fade-in zoom-in-95 duration-200">
               <AdminPortal
                 onBackToForm={() => setIsAdminView(false)}
-                googleToken={googleToken}
-                googleUser={googleUser}
-                onGoogleSignIn={handleGoogleSignIn}
-                onGoogleSignOut={handleGoogleSignOut}
-                isAuthLoading={isAuthLoading}
               />
             </div>
           )
@@ -763,8 +684,6 @@ export default function App() {
               formData={formData}
               orderRefNumber={orderRefNumber}
               onReset={handleReset}
-              emailStatus={emailStatus}
-              emailErrorMsg={emailErrorMsg}
             />
           </div>
         )}

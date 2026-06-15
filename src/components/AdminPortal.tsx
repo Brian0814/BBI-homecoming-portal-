@@ -8,18 +8,9 @@ import { OrderForm, PACKAGE_OPTIONS } from "../types";
 import { 
   Users, Trash2, Search, Download, Printer, ArrowUpDown, ChevronDown, 
   Layers, CreditCard, Sparkles, Filter, MoreHorizontal, ShoppingCart, 
-  MapPin, Phone, Mail, FileText, ArrowLeft, Ticket, ShoppingBag, Eye, Calendar,
-  Loader2, MailCheck, ShieldCheck, MailWarning, X
+  MapPin, Phone, Mail, FileText, ArrowLeft, Ticket, ShoppingBag, Eye, Calendar, X
 } from "lucide-react";
 import { getPaymentMilestones } from "../lib/paymentUtils";
-import { 
-  sendGmailMessage, 
-  generatePaymentReminderEmail,
-  generateConfirmationEmail,
-  generateJacketVerificationEmail,
-  generateFinalBalanceReminderEmail
-} from "../lib/gmailUtils";
-import GmailAuthWidget from "./GmailAuthWidget";
 
 interface HistoryEntry {
   ref: string;
@@ -29,11 +20,6 @@ interface HistoryEntry {
 
 interface AdminPortalProps {
   onBackToForm: () => void;
-  googleToken: string | null;
-  googleUser: any | null;
-  onGoogleSignIn: () => void;
-  onGoogleSignOut: () => void;
-  isAuthLoading: boolean;
 }
 
 // Solid 5 premium seed mock records to make the portal active, robust, and completely functional on launch!
@@ -141,12 +127,7 @@ const SEED_MOCK_DATA: HistoryEntry[] = [
 ];
 
 export default function AdminPortal({
-  onBackToForm,
-  googleToken,
-  googleUser,
-  onGoogleSignIn,
-  onGoogleSignOut,
-  isAuthLoading
+  onBackToForm
 }: AdminPortalProps) {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -156,19 +137,6 @@ export default function AdminPortal({
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [selectedAttendee, setSelectedAttendee] = useState<HistoryEntry | null>(null);
   const [deleteConfirmRef, setDeleteConfirmRef] = useState<string | null>(null);
-
-  // Senders/reminders status tracking
-  const [reminderSendStatus, setReminderSendStatus] = useState<Record<string, "idle" | "sending" | "sent" | "failed">>({});
-  const [reminderErrorMsg, setReminderErrorMsg] = useState<string>("");
-
-  // Campaign Scheduler and Email Series dispatch states
-  const [campaignStep, setCampaignStep] = useState<"welcome" | "deposit" | "jacket" | "final">("deposit");
-  const [campaignStatus, setCampaignStatus] = useState<"idle" | "running" | "completed" | "failed">("idle");
-  const [campaignProgressCurrent, setCampaignProgressCurrent] = useState(0);
-  const [campaignProgressTotal, setCampaignProgressTotal] = useState(0);
-  const [campaignLog, setCampaignLog] = useState<string[]>([]);
-  const [campaignSelectedRefs, setCampaignSelectedRefs] = useState<string[]>([]);
-  const [showCampaignWizard, setShowCampaignWizard] = useState(false);
 
   // Load history from localStorage or seed mock records if empty
   useEffect(() => {
@@ -214,112 +182,6 @@ export default function AdminPortal({
     const balanceDue = total - depositDue;
 
     return { total, depositDue, balanceDue };
-  };
-
-  const handleSendReminder = async (entry: HistoryEntry) => {
-    if (!googleToken) return;
-    const ref = entry.ref;
-    setReminderSendStatus((prev) => ({ ...prev, [ref]: "sending" }));
-    setReminderErrorMsg("");
-
-    try {
-      const { balanceDue } = calculateDepositAndBalance(entry.formData);
-      const subject = `BBI Homecoming 2026 - Payment Milestone Reminder [${ref}]`;
-      const htmlBody = generatePaymentReminderEmail(entry.formData, ref);
-
-      await sendGmailMessage(googleToken, entry.formData.email, subject, htmlBody);
-      setReminderSendStatus((prev) => ({ ...prev, [ref]: "sent" }));
-    } catch (err: any) {
-      console.error("Failed to send payment reminder:", err);
-      setReminderSendStatus((prev) => ({ ...prev, [ref]: "failed" }));
-      setReminderErrorMsg(err?.message || "Unknown Gmail service error. Ensure your account connection is authorized.");
-    }
-  };
-
-  // Synchronize campaign selected refs based on chosen campaign step
-  useEffect(() => {
-    let targets: string[] = [];
-    if (campaignStep === "jacket") {
-      targets = history.filter((h) => h.formData.addDetroitJacket).map((h) => h.ref);
-    } else if (campaignStep === "deposit") {
-      targets = history.filter((h) => {
-        const { depositDue } = calculateDepositAndBalance(h.formData);
-        return depositDue > 0;
-      }).map((h) => h.ref);
-    } else if (campaignStep === "final") {
-      targets = history.filter((h) => {
-        const { balanceDue } = calculateDepositAndBalance(h.formData);
-        return balanceDue > 0;
-      }).map((h) => h.ref);
-    } else {
-      // "welcome": select all
-      targets = history.map((h) => h.ref);
-    }
-    setCampaignSelectedRefs(targets);
-  }, [campaignStep, history]);
-
-  const handleLaunchCampaign = async () => {
-    if (!googleToken) return;
-    if (campaignSelectedRefs.length === 0) return;
-
-    setCampaignStatus("running");
-    setCampaignProgressCurrent(0);
-    setCampaignProgressTotal(campaignSelectedRefs.length);
-    setCampaignLog([]);
-
-    const logMessage = (msg: string) => {
-      setCampaignLog((prev) => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
-    };
-
-    logMessage(`Initiated Email Campaign Broadcast for step: ${campaignStep.toUpperCase()}`);
-    logMessage(`Found ${campaignSelectedRefs.length} selected sequence recipients`);
-
-    let successes = 0;
-    let failures = 0;
-
-    for (let i = 0; i < campaignSelectedRefs.length; i++) {
-      const ref = campaignSelectedRefs[i];
-      const entry = history.find((h) => h.ref === ref);
-      if (!entry) continue;
-
-      setCampaignProgressCurrent(i + 1);
-      logMessage(`[${i + 1}/${campaignSelectedRefs.length}] Dispatching to ${entry.formData.fullName}...`);
-
-      try {
-        let subject = "";
-        let htmlBody = "";
-
-        if (campaignStep === "welcome") {
-          subject = `BBI Homecoming 2026 - Registration Confirmation & Bill [${ref}]`;
-          htmlBody = generateConfirmationEmail(entry.formData, ref);
-        } else if (campaignStep === "deposit") {
-          subject = `BBI Homecoming 2026 - Payment Milestone Reminder [${ref}]`;
-          htmlBody = generatePaymentReminderEmail(entry.formData, ref);
-        } else if (campaignStep === "jacket") {
-          subject = `BBI Homecoming 2026 - Varsity Jacket Customization Details [${ref}]`;
-          htmlBody = generateJacketVerificationEmail(entry.formData, ref);
-        } else if (campaignStep === "final") {
-          subject = `BBI Homecoming 2026 - Final Account Balance Reminder [${ref}]`;
-          htmlBody = generateFinalBalanceReminderEmail(entry.formData, ref);
-        }
-
-        await sendGmailMessage(googleToken, entry.formData.email, subject, htmlBody);
-        logMessage(`✅ Successfully sent email to ${entry.formData.fullName}`);
-        successes++;
-
-        setReminderSendStatus((prev) => ({ ...prev, [ref]: "sent" }));
-      } catch (err: any) {
-        console.error(`Bulk delivery fail for entry ref ${ref}:`, err);
-        logMessage(`❌ Dispatch failed to ${entry.formData.fullName}: ${err?.message || "Unknown error"}`);
-        failures++;
-      }
-
-      // 800ms throttle pacing to prevent anti-spam trigger bounds
-      await new Promise((resolve) => setTimeout(resolve, 800));
-    }
-
-    setCampaignStatus("completed");
-    logMessage(`🎉 Sequence dispatch complete: ${successes} successfully delivered, ${failures} failures.`);
   };
 
   // Delete handler
@@ -501,212 +363,7 @@ export default function AdminPortal({
         </div>
       </div>
 
-      {/* Gmail Authorization widget for administrators exclusively */}
-      <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl shadow-2xs space-y-2">
-        <div className="flex items-center gap-1.5 border-b border-slate-200 pb-2">
-          <span className="w-2 h-2 rounded-full bg-brand-blue" />
-          <h4 className="text-[10px] font-black uppercase text-slate-550 tracking-wider">
-            Chapter Treasury Email Server Credentials (Secure Connection)
-          </h4>
-        </div>
-        <GmailAuthWidget
-          user={googleUser}
-          accessToken={googleToken}
-          onSignIn={onGoogleSignIn}
-          onSignOut={onGoogleSignOut}
-          isLoading={isAuthLoading}
-        />
-      </div>
 
-      {/* Integrated Campaign & Reminder Sequences Blast Center */}
-      {!googleToken ? (
-        <div className="bg-white border border-gray-200 p-5 rounded-2xl shadow-2xs space-y-3">
-          <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-            <div className="flex items-center gap-2">
-              <span className="p-1 px-1.5 bg-brand-blue/10 text-brand-blue rounded-md text-sm font-bold animate-pulse">📬</span>
-              <div>
-                <h3 className="font-display font-black text-gray-950 text-xs uppercase tracking-wider">Reminder Campaign Queue & Email Series Blast</h3>
-                <p className="text-[9.5px] font-semibold text-gray-400">Deploy sequence-based reminders to multiple chapter members at once</p>
-              </div>
-            </div>
-            <span className="text-[9px] font-black uppercase text-slate-400 bg-slate-100 px-2 py-0.5 rounded-sm">Connection Required</span>
-          </div>
-          <p className="text-[10.5px] text-gray-500 font-medium max-w-2xl leading-relaxed">
-            Please authorize your Chapter treasury credentials in the connection box above. Once connected, a campaign desk will unlock here allowing you to selectively blast multi-stage emails (welcome packages, deposit milestones, custom varsity jacket embroidery check-ins, or final clearances) directly to multiple inbox targets concurrently.
-          </p>
-        </div>
-      ) : (
-        <div className="bg-white border border-gray-200 p-5 rounded-2xl shadow-xs space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-gray-100 pb-3.5">
-            <div className="flex items-center gap-2">
-              <span className="p-1.5 bg-brand-blue/10 text-brand-blue rounded-md text-base">📬</span>
-              <div>
-                <h3 className="font-display font-black text-gray-950 text-xs sm:text-sm uppercase tracking-wider">Sigma Reminder Sequence Dispatch Center</h3>
-                <p className="text-[10px] font-semibold text-gray-400">Launch a series of automated email deadlines instantly from your mailbox</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowCampaignWizard(!showCampaignWizard)}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-gray-300 bg-white hover:bg-gray-50 text-gray-700 font-black text-[10px] uppercase shadow-3xs cursor-pointer transition-all"
-            >
-              <span>{showCampaignWizard ? "Hide Campaign Desk" : "Open Campaign Desk"}</span>
-              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showCampaignWizard ? "rotate-180" : ""}`} />
-            </button>
-          </div>
-
-          {showCampaignWizard && (
-            <div className="space-y-4 animate-in fade-in slide-in-from-top-1 duration-150">
-              <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                
-                {/* 1. Campaign Choice Selector */}
-                <div className="md:col-span-4 space-y-2">
-                  <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider block">1. Select Campaign Series Step</span>
-                  <select
-                    value={campaignStep}
-                    onChange={(e) => setCampaignStep(e.target.value as any)}
-                    className="py-2 px-3 text-xs block w-full rounded-lg border border-gray-300 text-gray-900 bg-white font-bold focus:outline-hidden"
-                  >
-                    <option value="welcome">Step 1: Welcome & Invoice Confirmation (Zelle Details)</option>
-                    <option value="deposit">Step 2: Initial Deposit Notice ($100/$170 target due 7/19)</option>
-                    <option value="jacket">Step 3: Custom Jacket Sizing & Details Verification</option>
-                    <option value="final">Step 4: Final Outstanding Balance Recall (Due 9/4)</option>
-                  </select>
-                  <div className="p-3 bg-blue-50/50 rounded-lg border border-blue-100 text-[10px] text-brand-blue-dark leading-relaxed font-semibold">
-                    {campaignStep === "welcome" && "💌 Welcomes brothers to homecoming, attaching registered category information, full sizing totals, and Zelle instructions for baseline account activation."}
-                    {campaignStep === "deposit" && "⏰ Highlights the critical upcoming July 19 deadline to submit deposits ($100 basic packages, $170 for jacket packages) to preserve rosters."}
-                    {campaignStep === "jacket" && "🧥 Cross-checks embroidery details (crossing year, line name spelling, line number, sleeve size) exclusively with custom jacket order members."}
-                    {campaignStep === "final" && "🚨 Issues final balance request targeting members with outstanding funds due Sept 4 in order to close final hotel & venue counts."}
-                  </div>
-                </div>
-
-                {/* 2. Recipient Checker list */}
-                <div className="md:col-span-5 space-y-2">
-                  <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider block">
-                    2. Select Recipients ({campaignSelectedRefs.length} targeted)
-                  </span>
-                  <div className="border border-gray-200 rounded-lg p-2.5 max-h-[140px] overflow-y-auto space-y-1.5 bg-slate-50/20 font-sans">
-                    {history.map((h) => {
-                      let isSuggestedByFilter = true;
-                      if (campaignStep === "jacket") isSuggestedByFilter = h.formData.addDetroitJacket;
-                      else if (campaignStep === "deposit") {
-                        const { depositDue } = calculateDepositAndBalance(h.formData);
-                        isSuggestedByFilter = depositDue > 0;
-                      } else if (campaignStep === "final") {
-                        const { balanceDue } = calculateDepositAndBalance(h.formData);
-                        isSuggestedByFilter = balanceDue > 0;
-                      }
-
-                      return (
-                        <label 
-                          key={h.ref} 
-                          className={`flex items-center justify-between p-1.5 px-2 rounded-md border transition-colors text-[10.5px] cursor-pointer ${
-                            campaignSelectedRefs.includes(h.ref) 
-                              ? "bg-blue-50/30 border-blue-200 text-slate-800"
-                              : "bg-white border-transparent text-gray-400 hover:bg-slate-50"
-                          } ${!isSuggestedByFilter ? "opacity-45" : ""}`}
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <input
-                              type="checkbox"
-                              checked={campaignSelectedRefs.includes(h.ref)}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setCampaignSelectedRefs((prev) => [...prev, h.ref]);
-                                } else {
-                                  setCampaignSelectedRefs((prev) => prev.filter((r) => r !== h.ref));
-                                }
-                              }}
-                              className="rounded-sm border-gray-300 text-brand-blue focus:ring-brand-blue cursor-pointer"
-                            />
-                            <span className="font-extrabold truncate">{h.formData.fullName}</span>
-                          </div>
-                          <div className="flex items-center gap-1.5 flex-shrink-0 font-mono text-[9px] font-bold">
-                            {h.formData.addDetroitJacket && <span className="text-[8px] bg-purple-50 text-purple-700 px-1 rounded-sm uppercase font-black">Coat</span>}
-                            <span>{h.ref}</span>
-                          </div>
-                        </label>
-                      );
-                    })}
-                    {history.length === 0 && (
-                      <p className="text-center font-bold text-gray-450 text-[10px] py-4">No active register entries.</p>
-                    )}
-                  </div>
-                  <div className="flex gap-2 text-[9.5px]">
-                    <button
-                      type="button"
-                      onClick={() => setCampaignSelectedRefs(history.map((h) => h.ref))}
-                      className="text-brand-blue hover:underline font-extrabold cursor-pointer"
-                    >
-                      Select All ({history.length})
-                    </button>
-                    <span className="text-gray-300">|</span>
-                    <button
-                      type="button"
-                      onClick={() => setCampaignSelectedRefs([])}
-                      className="text-gray-450 hover:underline font-extrabold cursor-pointer"
-                    >
-                      Deselect All
-                    </button>
-                  </div>
-                </div>
-
-                {/* 3. Launch Controls & Live Logs console */}
-                <div className="md:col-span-3 space-y-2 flex flex-col justify-between">
-                  <div>
-                    <span className="text-[10px] font-black uppercase text-gray-400 tracking-wider block mb-1.5">3. Batch Dispatch</span>
-                    {campaignStatus === "running" ? (
-                      <div className="bg-blue-50 border border-blue-105 p-3 rounded-xl text-center space-y-2 shadow-2xs">
-                        <Loader2 className="w-5 h-5 text-brand-blue animate-spin mx-auto" />
-                        <p className="text-[10px] text-gray-500 font-extrabold font-mono">
-                          Dispatched {campaignProgressCurrent} / {campaignProgressTotal}
-                        </p>
-                        <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
-                          <div 
-                            className="bg-brand-blue h-full transition-all duration-300"
-                            style={{ width: `${(campaignProgressCurrent / campaignProgressTotal) * 100}%` }}
-                          />
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-1.5">
-                        <button
-                          type="button"
-                          disabled={campaignSelectedRefs.length === 0}
-                          onClick={handleLaunchCampaign}
-                          className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer min-h-[38px]"
-                        >
-                          <Mail className="w-3.5 h-3.5" />
-                          <span>Launch Step {campaignStep === "welcome" ? "1" : campaignStep === "deposit" ? "2" : campaignStep === "jacket" ? "3" : "4"} Blast</span>
-                        </button>
-                        {campaignStatus === "completed" && (
-                          <div className="bg-emerald-50 text-emerald-800 text-[10px] font-black p-2 rounded-lg border border-emerald-200 text-center flex items-center justify-center gap-1 animate-in zoom-in-95 leading-normal">
-                            <MailCheck className="w-4 h-4 text-emerald-600 flex-shrink-0 animate-bounce" />
-                            <span>Campaign Deployed! Check Sent Mailbox.</span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Telemetry Window */}
-                  <div className="bg-slate-950 text-[9.5px] text-slate-300 p-2 rounded-lg border border-slate-900 font-mono h-[80px] overflow-y-auto space-y-0.5 shadow-inner">
-                    <span className="text-[8px] font-black text-amber-500 block uppercase border-b border-slate-800 pb-0.5">📟 Sequence Blast Logs</span>
-                    {campaignLog.length === 0 ? (
-                      <p className="text-slate-500 italic pt-1 text-[8.5px]">Waiting to launch sequence thread...</p>
-                    ) : (
-                      campaignLog.map((logStr, idx) => (
-                        <p key={idx} className="whitespace-pre-wrap leading-tight text-[8px]">{logStr}</p>
-                      ))
-                    )}
-                  </div>
-                </div>
-
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* 2. Interactive Analytical Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4" id="stats-dashboard">
@@ -1028,74 +685,6 @@ export default function AdminPortal({
                       <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
                       <span className="select-all">{selectedAttendee.formData.phone}</span>
                     </p>
-                  </div>
-
-                  {/* Automated Reminder Email Dispatch Desk */}
-                  <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 space-y-2.5 shadow-2xs">
-                    <span className="text-[10px] font-black uppercase text-brand-blue tracking-wider block flex items-center gap-1">
-                      📧 Gmail Reminder Terminal
-                    </span>
-                    
-                    {!googleToken ? (
-                      <div className="space-y-1.5">
-                        <p className="text-[10.5px] text-gray-500 leading-normal font-medium">
-                          Link your Google account in the dashboard top credentials panel above to enable instant automated payment alerts from your own mailbox.
-                        </p>
-                        <div className="inline-flex items-center gap-1.5 text-[10px] font-bold text-gray-500 bg-slate-100 p-1.5 px-3 rounded-lg border border-gray-200">
-                          <MailWarning className="w-4 h-4 text-gray-400" />
-                          <span>Reminder dispatcher matches offline</span>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <p className="text-[10.5px] text-gray-550 leading-normal font-medium">
-                          Send a committee-styled payment deadline notification to this member (<span className="text-brand-blue font-bold font-mono">{selectedAttendee.formData.email}</span>).
-                        </p>
-                        
-                        {reminderSendStatus[selectedAttendee.ref] === "sending" ? (
-                          <button
-                            type="button"
-                            disabled
-                            className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-lg bg-slate-150 text-gray-400 font-bold text-xs border border-gray-250 animate-pulse"
-                          >
-                            <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-blue" />
-                            <span>Sending payment notification...</span>
-                          </button>
-                        ) : reminderSendStatus[selectedAttendee.ref] === "sent" ? (
-                          <div className="space-y-1.5 animate-in zoom-in-95 duration-155">
-                            <div className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-lg bg-emerald-50 text-emerald-800 font-extrabold text-xs border border-emerald-200">
-                              <MailCheck className="w-4 h-4 text-emerald-600 animate-bounce" />
-                              <span>Success! Alert sent under {googleUser?.email}</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleSendReminder(selectedAttendee)}
-                              className="w-full text-center text-[10px] text-slate-400 hover:text-slate-650 hover:underline font-semibold block pt-0.5 cursor-pointer"
-                            >
-                              Send another reminder?
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="space-y-1.5">
-                            <button
-                              type="button"
-                              onClick={() => handleSendReminder(selectedAttendee)}
-                              className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-brand-blue hover:bg-brand-blue-dark text-white font-extrabold text-xs shadow-xs transition-all cursor-pointer min-h-[38px]"
-                            >
-                              <Mail className="w-3.5 h-3.5 text-white" />
-                              <span>Send Payment Reminder Email</span>
-                            </button>
-                            
-                            {reminderSendStatus[selectedAttendee.ref] === "failed" && (
-                              <div className="bg-red-50 border border-red-155 p-2.5 rounded-lg text-left text-red-700 space-y-0.5">
-                                <span className="font-extrabold block text-[9.5px] uppercase text-red-500 tracking-wider">⚠️ Dispatch error</span>
-                                <p className="text-[10px] leading-normal font-semibold text-red-600">{reminderErrorMsg || "SMTP connection failed."}</p>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
 
                   {/* Homecoming Treasury Milestone Balance Sheet */}

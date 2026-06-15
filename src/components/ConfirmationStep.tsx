@@ -5,7 +5,7 @@
 
 import React from "react";
 import { OrderForm, PACKAGE_OPTIONS } from "../types";
-import { CheckCircle2, Copy, MapPin, Phone, Mail, Clock, Printer, Ticket, ShoppingBag, Receipt, Calendar, MailCheck } from "lucide-react";
+import { CheckCircle2, Copy, MapPin, Phone, Mail, Clock, Printer, Ticket, ShoppingBag, Receipt, Calendar } from "lucide-react";
 import BBIChapterLogo from "./BBIChapterLogo";
 import { getPaymentMilestones } from "../lib/paymentUtils";
 
@@ -13,16 +13,12 @@ interface ConfirmationStepProps {
   formData: OrderForm;
   orderRefNumber: string;
   onReset: () => void;
-  emailStatus?: "idle" | "sending" | "sent" | "failed";
-  emailErrorMsg?: string;
 }
 
 export default function ConfirmationStep({
   formData,
   orderRefNumber,
-  onReset,
-  emailStatus = "idle",
-  emailErrorMsg = ""
+  onReset
 }: ConfirmationStepProps) {
   const selectedPackage = PACKAGE_OPTIONS.find((p) => p.id === formData.selectedPackageId);
 
@@ -93,33 +89,6 @@ export default function ConfirmationStep({
         <p className="text-[11px] text-gray-400 mt-3 font-medium col-span-full">
           Prepare this reference number for package collection on-campus and check-in at tailgate environments.
         </p>
-
-        {/* Email delivery feedback HUD */}
-        <div className="mt-4 pt-3.5 border-t border-slate-200 text-xs text-center">
-          {emailStatus === "sending" && (
-            <div className="flex items-center justify-center gap-2 text-amber-600 font-bold animate-pulse">
-              <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
-              <span>Sending invoice receipt to your inbox...</span>
-            </div>
-          )}
-          {emailStatus === "sent" && (
-            <div className="flex items-center justify-center gap-2 text-emerald-600 font-bold bg-emerald-50 border border-emerald-100 p-2.5 rounded-lg">
-              <MailCheck className="w-4 h-4 text-emerald-500" />
-              <span>Automated confirmation sent to your email at {formData.email}!</span>
-            </div>
-          )}
-          {emailStatus === "failed" && (
-            <div className="text-left text-red-700 bg-red-50 border border-red-100 p-2.5 rounded-lg space-y-1">
-              <span className="font-extrabold block text-[10px] uppercase text-red-500 tracking-wider">⚠️ Email dispatch offline</span>
-              <p className="text-[10.5px] text-red-600 leading-normal">{emailErrorMsg || "Gmail SMTP send failed. Please verify auth credentials."}</p>
-            </div>
-          )}
-          {emailStatus === "idle" && (
-            <div className="text-[10.5px] text-gray-550 italic font-medium leading-normal bg-slate-100/50 p-2 rounded-lg border border-slate-200/50">
-              🔗 Organizer Offline: Link Google account in the header HUD to enable immediate automatic email receipts.
-            </div>
-          )}
-        </div>
       </div>
 
       <div className="border-t border-gray-100 pt-6">
