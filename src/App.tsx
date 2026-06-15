@@ -453,16 +453,6 @@ export default function App() {
 
       {/* 2. Main content block - Toggles between Admin dashboard and Intake form */}
       <main className="max-w-4xl w-full mx-auto px-4 py-8 flex-1">
-        {/* Persistent Email configuration HUD */}
-        <div className="mb-6">
-          <GmailAuthWidget
-            user={googleUser}
-            accessToken={googleToken}
-            onSignIn={handleGoogleSignIn}
-            onSignOut={handleGoogleSignOut}
-            isLoading={isAuthLoading}
-          />
-        </div>
 
         {isAdminView ? (
           !isAdminAuthenticated ? (
@@ -547,150 +537,15 @@ export default function App() {
                 onBackToForm={() => setIsAdminView(false)}
                 googleToken={googleToken}
                 googleUser={googleUser}
+                onGoogleSignIn={handleGoogleSignIn}
+                onGoogleSignOut={handleGoogleSignOut}
+                isAuthLoading={isAuthLoading}
               />
             </div>
           )
         ) : !isSubmitted ? (
           /* REGULAR INTAKE STEPS SCREEN */
           <div className="space-y-6">
-            
-            {/* DEV TOOLBAR / CONVENIENT AUTO-FILL TESTING DECK */}
-            <div className="bg-slate-900 text-white rounded-2xl p-4.5 shadow-md border border-slate-800 space-y-3.5" id="dev-testing-deck">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-2.5">
-                <div className="flex items-center gap-2">
-                  <div className="p-1 px-2 bg-brand-blue/30 text-brand-blue-light border border-brand-blue-light/20 rounded-md text-[10px] font-black uppercase tracking-wider animate-pulse">
-                    DEV HELPER
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-black uppercase tracking-wider text-slate-100">
-                      Form Preview & Quick Test Deck
-                    </h3>
-                    <p className="text-[10px] text-slate-400">
-                      Skip manual form entry. Instantly populate mock data and jump directly to see layout updates!
-                    </p>
-                  </div>
-                </div>
-                
-                <span className="text-[9px] text-slate-500 font-mono">
-                  State: Step {activeStep + 1}
-                </span>
-              </div>
-
-              <div className="flex flex-wrap gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFormData({
-                      fullName: "Brother Brian Johnson",
-                      email: "brianojohnson80@gmail.com",
-                      phone: "8439021914",
-                      shippingAddress: {
-                        street: "178 BLke",
-                        city: "Conway",
-                        state: "SC",
-                        zipCode: "29526"
-                      },
-                      shirtSize: "XL",
-                      specialRequests: "Please wrap the alumni package securely together.",
-                      selectedPackageId: "langston-taylor",
-                      addFootballTicket: true,
-                      addDetroitJacket: true,
-                      jacketSize: "XL",
-                      jacketCrossingYear: "SPR 04",
-                      jacketLineName: "BBI",
-                      jacketEntireLineName: "14 Solitary Marines",
-                      jacketLineNumber: "#04"
-                    });
-                    setErrors({});
-                    setActiveStep(3); // Goes directly to the Review page (step index 3 is Review)
-                  }}
-                  className="flex-1 min-w-[200px] text-left p-2.5 bg-slate-850 hover:bg-slate-800 rounded-lg border border-slate-800 hover:border-slate-700 transition-all text-xs cursor-pointer group"
-                >
-                  <span className="font-extrabold text-blue-400 block group-hover:text-blue-300">
-                    ⚡ Fill: Langston Taylor Alumni + Jacket
-                  </span>
-                  <span className="text-[9.5px] text-slate-400 font-medium">
-                    Populates Langston Taylor, adds $135 Detroit Jacket, and jumps to Step 4 (Review).
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFormData({
-                      fullName: "Hon. Leonard Morse Test",
-                      email: "morse_example@gmail.com",
-                      phone: "8435550191",
-                      shippingAddress: {
-                        street: "1914 Blue Crescent Dr",
-                        city: "Conway",
-                        state: "SC",
-                        zipCode: "29526"
-                      },
-                      shirtSize: "L",
-                      specialRequests: "",
-                      selectedPackageId: "leonard-morse",
-                      addFootballTicket: false,
-                      addDetroitJacket: false,
-                      jacketSize: "",
-                      jacketCrossingYear: "",
-                      jacketLineName: "",
-                      jacketEntireLineName: "",
-                      jacketLineNumber: ""
-                    });
-                    setErrors({});
-                    setActiveStep(3); // Goes directly to the Review page
-                  }}
-                  className="flex-1 min-w-[200px] text-left p-2.5 bg-slate-850 hover:bg-slate-800 rounded-lg border border-slate-800 hover:border-slate-700 transition-all text-xs cursor-pointer group"
-                >
-                  <span className="font-extrabold text-amber-400 block group-hover:text-amber-300">
-                    ⚡ Fill: Morse Package (No Jacket)
-                  </span>
-                  <span className="text-[9.5px] text-slate-400 font-medium">
-                    Populates Leonard Morse Package, no add-ons, and jumps directly to Step 4 (Review).
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    // Populate and instantly submit to confirmation/invoice schedule screen
-                    setFormData({
-                      fullName: "Brother Brian Johnson",
-                      email: "brianojohnson80@gmail.com",
-                      phone: "8439021914",
-                      shippingAddress: {
-                        street: "178 BLke",
-                        city: "Conway",
-                        state: "SC",
-                        zipCode: "29526"
-                      },
-                      shirtSize: "XL",
-                      specialRequests: "Preloaded demo checkout profile",
-                      selectedPackageId: "langston-taylor",
-                      addFootballTicket: true,
-                      addDetroitJacket: true,
-                      jacketSize: "XL",
-                      jacketCrossingYear: "SPR 04",
-                      jacketLineName: "BBI",
-                      jacketEntireLineName: "14 Solitary Marines",
-                      jacketLineNumber: "#04"
-                    });
-                    setErrors({});
-                    setOrderRefNumber("BBI-PREVIEW-99452");
-                    setIsSubmitted(true);
-                  }}
-                  className="flex-1 min-w-[200px] text-left p-2.5 bg-brand-blue/90 hover:bg-brand-blue text-white rounded-lg border border-brand-blue-light/20 shadow-xs transition-all text-xs cursor-pointer group"
-                >
-                  <span className="font-black block text-white">
-                    🚀 Jump straight to Order Confirmation page
-                  </span>
-                  <span className="text-[9.5px] text-blue-100 font-medium">
-                    Generates a mock receipt showing all add-ons and the official Payment Schedule!
-                  </span>
-                </button>
-              </div>
-            </div>
 
             {/* PROGRESS INDICATOR: 3 Steps */}
             <nav className="bg-white rounded-2xl border border-gray-200 p-5 shadow-xs" aria-label="Progress">

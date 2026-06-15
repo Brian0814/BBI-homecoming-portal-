@@ -9,10 +9,11 @@ import {
   Users, Trash2, Search, Download, Printer, ArrowUpDown, ChevronDown, 
   Layers, CreditCard, Sparkles, Filter, MoreHorizontal, ShoppingCart, 
   MapPin, Phone, Mail, FileText, ArrowLeft, Ticket, ShoppingBag, Eye, Calendar,
-  Loader2, MailCheck, ShieldCheck, MailWarning
+  Loader2, MailCheck, ShieldCheck, MailWarning, X
 } from "lucide-react";
 import { getPaymentMilestones } from "../lib/paymentUtils";
 import { sendGmailMessage, generatePaymentReminderEmail } from "../lib/gmailUtils";
+import GmailAuthWidget from "./GmailAuthWidget";
 
 interface HistoryEntry {
   ref: string;
@@ -24,6 +25,9 @@ interface AdminPortalProps {
   onBackToForm: () => void;
   googleToken: string | null;
   googleUser: any | null;
+  onGoogleSignIn: () => void;
+  onGoogleSignOut: () => void;
+  isAuthLoading: boolean;
 }
 
 // Solid 5 premium seed mock records to make the portal active, robust, and completely functional on launch!
@@ -133,7 +137,10 @@ const SEED_MOCK_DATA: HistoryEntry[] = [
 export default function AdminPortal({
   onBackToForm,
   googleToken,
-  googleUser
+  googleUser,
+  onGoogleSignIn,
+  onGoogleSignOut,
+  isAuthLoading
 }: AdminPortalProps) {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -393,6 +400,23 @@ export default function AdminPortal({
         </div>
       </div>
 
+      {/* Gmail Authorization widget for administrators exclusively */}
+      <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl shadow-2xs space-y-2">
+        <div className="flex items-center gap-1.5 border-b border-slate-200 pb-2">
+          <span className="w-2 h-2 rounded-full bg-brand-blue" />
+          <h4 className="text-[10px] font-black uppercase text-slate-550 tracking-wider">
+            Chapter Treasury Email Server Credentials (Secure Connection)
+          </h4>
+        </div>
+        <GmailAuthWidget
+          user={googleUser}
+          accessToken={googleToken}
+          onSignIn={onGoogleSignIn}
+          onSignOut={onGoogleSignOut}
+          isLoading={isAuthLoading}
+        />
+      </div>
+
       {/* 2. Interactive Analytical Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4" id="stats-dashboard">
         {/* Card 1: Submissions */}
@@ -515,366 +539,411 @@ export default function AdminPortal({
         </div>
       </div>
 
-      {/* 4. Table Grid Lists & Details Overlay Column */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-        {/* Registration Table List */}
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden">
-          <div className="border-b border-gray-150 p-4 bg-slate-50/50 flex items-center justify-between">
+      {/* 4. Active Member Register List (Expanded full-width!) */}
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-xs overflow-hidden" id="active-register-table-container">
+        <div className="border-b border-gray-150 p-4 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="space-y-1">
             <span className="text-xs font-black text-slate-800 uppercase tracking-widest block">
-              Active Member Register ({processedRecords.length} results)
+              Active Member Register
             </span>
-            <div className="flex gap-2 text-[10px] text-gray-400 font-bold">
-              <span>Sort:</span>
-              <button onClick={() => toggleSort("date")} className={`hover:underline cursor-pointer flex items-center gap-0.5 ${activeSortField === "date" ? "text-brand-blue" : ""}`}>
-                Date {activeSortField === "date" && (sortDirection === "asc" ? "▲" : "▼")}
-              </button>
-              <button onClick={() => toggleSort("name")} className={`hover:underline cursor-pointer flex items-center gap-0.5 ${activeSortField === "name" ? "text-brand-blue" : ""}`}>
-                Name {activeSortField === "name" && (sortDirection === "asc" ? "▲" : "▼")}
-              </button>
-              <button onClick={() => toggleSort("total")} className={`hover:underline cursor-pointer flex items-center gap-0.5 ${activeSortField === "total" ? "text-brand-blue" : ""}`}>
-                Total {activeSortField === "total" && (sortDirection === "asc" ? "▲" : "▼")}
-              </button>
-            </div>
+            <p className="text-[10px] text-gray-400 font-semibold">
+              Found {processedRecords.length} registrants • Click a member to slide over detailed embroidery, sizing & address sheets.
+            </p>
           </div>
-
-          <div className="overflow-x-auto">
-            {processedRecords.length > 0 ? (
-              <table className="min-w-full divide-y divide-gray-200 text-xs">
-                <thead>
-                  <tr className="bg-slate-50 text-gray-500 uppercase font-bold tracking-wider text-[10px]">
-                    <th className="px-4 py-3 text-left">Member Name</th>
-                    <th className="px-4 py-3 text-left hidden sm:table-cell">Reg Category</th>
-                    <th className="px-4 py-3 text-center">Add-Ons</th>
-                    <th className="px-4 py-3 text-right">Sum</th>
-                    <th className="px-4 py-3 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {processedRecords.map((item) => {
-                    const pkg = PACKAGE_OPTIONS.find((p) => p.id === item.formData.selectedPackageId);
-                    const isJacket = item.formData.addDetroitJacket;
-                    const isTicket = item.formData.addFootballTicket;
-                    const total = calculateGrandTotal(item.formData);
-
-                    return (
-                      <tr 
-                        key={item.ref}
-                        className={`hover:bg-blue-50/20 cursor-pointer transition-colors ${
-                          selectedAttendee?.ref === item.ref ? "bg-blue-50/50" : ""
-                        }`}
-                        onClick={() => setSelectedAttendee(item)}
-                      >
-                        {/* Member Name details */}
-                        <td className="px-4 py-3.5">
-                          <p className="font-extrabold text-gray-900">{item.formData.fullName}</p>
-                          <p className="text-[10px] text-gray-400 font-mono mt-0.5">{item.ref}</p>
-                        </td>
-
-                        {/* Reg Package type */}
-                        <td className="px-4 py-3.5 hidden sm:table-cell">
-                          <p className="font-semibold text-slate-800 truncate max-w-[140px]">{pkg?.name || "None Chosen"}</p>
-                          <p className="text-[10px] text-gray-400 font-semibold">{item.formData.shirtSize ? `Size ${item.formData.shirtSize} T-Shirt` : ""}</p>
-                        </td>
-
-                        {/* Add-on badges */}
-                        <td className="px-4 py-3.5 text-center">
-                          <div className="inline-flex flex-wrap gap-1 items-center justify-center">
-                            {isTicket && (
-                              <span className="bg-emerald-50 text-emerald-800 border border-emerald-100 text-[9px] font-black uppercase px-1.5 py-0.5 rounded-sm flex items-center gap-0.5" title="Football ticket purchased">
-                                <Ticket className="w-2.5 h-2.5" /> Ticket
-                              </span>
-                            )}
-                            {isJacket && (
-                              <span className="bg-indigo-50 text-indigo-800 border border-indigo-100 text-[9px] font-black uppercase px-1.5 py-0.5 rounded-sm flex items-center gap-0.5" title="Carhartt Style Jacket purchased">
-                                <ShoppingBag className="w-2.5 h-2.5" /> Jacket ({item.formData.jacketSize})
-                              </span>
-                            )}
-                            {!isTicket && !isJacket && (
-                              <span className="text-[9px] text-gray-300 font-bold block">No Addons</span>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* SUM total */}
-                        <td className="px-4 py-3.5 text-right font-mono">
-                          <p className="font-black text-slate-900 text-sm">${total}</p>
-                          {(() => {
-                            const { depositDue, balanceDue } = calculateDepositAndBalance(item.formData);
-                            return (
-                              <p className="text-[9.5px] font-sans font-bold mt-1 tracking-tight leading-none whitespace-nowrap">
-                                <span className="text-brand-blue" title="Required deposit due July 19">7/19: ${depositDue}</span>
-                                <span className="mx-1 text-gray-300">|</span>
-                                <span className="text-amber-700" title="Remaining balance due September 4">9/4: ${balanceDue}</span>
-                              </p>
-                            );
-                          })()}
-                        </td>
-
-                        {/* Action parameters */}
-                        <td className="px-4 py-3.5 text-right space-x-1.5" onClick={(e) => e.stopPropagation()}>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedAttendee(item)}
-                            className="p-1 px-2 rounded-md bg-slate-100 hover:bg-brand-blue hover:text-white text-gray-500 font-bold text-[10px] cursor-pointer transition-all"
-                          >
-                            Details
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteEntry(item.ref)}
-                            className="p-1 rounded-md hover:bg-red-50 text-gray-400 hover:text-red-600 cursor-pointer transition-colors"
-                            title="Delete entry"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            ) : (
-              <div className="text-center py-10 px-4">
-                <Layers className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-                <p className="text-xs font-semibold text-gray-500">No registered intakes match the active filter criteria.</p>
-                <button
-                  onClick={() => {
-                    setSearchTerm("");
-                    setFilterPackage("all");
-                    setFilterJacket("all");
-                  }}
-                  className="mt-2 text-xs font-bold text-brand-blue hover:underline cursor-pointer"
-                >
-                  Clear active filters
-                </button>
-              </div>
-            )}
+          <div className="flex items-center gap-2 text-[10px] text-gray-400 font-bold bg-white border border-gray-200 p-1.5 px-3 rounded-lg flex-shrink-0 self-start sm:self-auto shadow-3xs">
+            <span>Sort By:</span>
+            <button onClick={() => toggleSort("date")} className={`hover:underline cursor-pointer flex items-center gap-0.5 ${activeSortField === "date" ? "text-brand-blue" : ""}`}>
+              Date {activeSortField === "date" && (sortDirection === "asc" ? "▲" : "▼")}
+            </button>
+            <span className="text-gray-300">|</span>
+            <button onClick={() => toggleSort("name")} className={`hover:underline cursor-pointer flex items-center gap-0.5 ${activeSortField === "name" ? "text-brand-blue" : ""}`}>
+              Name {activeSortField === "name" && (sortDirection === "asc" ? "▲" : "▼")}
+            </button>
+            <span className="text-gray-300">|</span>
+            <button onClick={() => toggleSort("total")} className={`hover:underline cursor-pointer flex items-center gap-0.5 ${activeSortField === "total" ? "text-brand-blue" : ""}`}>
+              Total {activeSortField === "total" && (sortDirection === "asc" ? "▲" : "▼")}
+            </button>
           </div>
         </div>
 
-        {/* Selected Registrant Expand Details Column */}
-        <div className="bg-white border border-gray-200 rounded-2xl shadow-xs overflow-hidden">
-          <div className="bg-slate-950 font-display font-black text-[10px] uppercase tracking-widest text-brand-blue-light p-4 flex items-center justify-between">
-            <span>Registrant Profile Detail</span>
-            {selectedAttendee && (
-              <span className="bg-brand-blue text-white px-2 py-0.5 rounded-sm font-mono text-[9px]">
-                {selectedAttendee.ref}
-              </span>
-            )}
-          </div>
+        <div className="overflow-x-auto font-sans">
+          {processedRecords.length > 0 ? (
+            <table className="min-w-full divide-y divide-gray-200 text-xs">
+              <thead>
+                <tr className="bg-slate-50 text-gray-500 uppercase font-bold tracking-wider text-[10px] border-b border-gray-200">
+                  <th className="px-6 py-3.5 text-left">Member Name</th>
+                  <th className="px-6 py-3.5 text-left hidden sm:table-cell">Reg Category</th>
+                  <th className="px-6 py-3.5 text-center">Add-Ons</th>
+                  <th className="px-6 py-3.5 text-right">Sum Owed</th>
+                  <th className="px-6 py-3.5 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {processedRecords.map((item) => {
+                  const pkg = PACKAGE_OPTIONS.find((p) => p.id === item.formData.selectedPackageId);
+                  const isJacket = item.formData.addDetroitJacket;
+                  const isTicket = item.formData.addFootballTicket;
+                  const total = calculateGrandTotal(item.formData);
 
-          {selectedAttendee ? (
-            <div className="p-5 space-y-5 text-xs text-gray-700">
-              {/* Full Header Name */}
-              <div>
-                <h4 className="font-display font-black text-gray-950 text-base leading-snug">
-                  {selectedAttendee.formData.fullName}
-                </h4>
-                <p className="text-[10px] text-gray-400 font-medium flex items-center gap-1 mt-1">
-                  <Calendar className="w-3" /> Registered on: {new Date(selectedAttendee.date).toLocaleDateString()} at {new Date(selectedAttendee.date).toLocaleTimeString()}
-                </p>
-              </div>
+                  return (
+                    <tr 
+                      key={item.ref}
+                      className={`hover:bg-blue-50/45 cursor-pointer transition-colors ${
+                        selectedAttendee?.ref === item.ref ? "bg-slate-50 font-medium" : ""
+                      }`}
+                      onClick={() => setSelectedAttendee(item)}
+                    >
+                      {/* Member Name details */}
+                      <td className="px-6 py-4">
+                        <p className="font-extrabold text-slate-900 text-[13px]">{item.formData.fullName}</p>
+                        <span className="inline-flex items-center gap-1 text-[9.5px] font-mono text-gray-550 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-sm mt-1 uppercase font-bold">
+                          🔑 {item.ref}
+                        </span>
+                      </td>
 
-              {/* Contact Block Grid */}
-              <div className="border-t border-gray-100 pt-3 space-y-2">
-                <p className="flex items-center gap-2 font-medium">
-                  <Mail className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                  <span className="truncate">{selectedAttendee.formData.email}</span>
-                </p>
-                <p className="flex items-center gap-2 font-medium">
-                  <Phone className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                  <span>{selectedAttendee.formData.phone}</span>
-                </p>
-              </div>
+                      {/* Reg Package type */}
+                      <td className="px-6 py-4 hidden sm:table-cell">
+                        <p className="font-bold text-slate-800 text-[12px]">{pkg?.name || "None Chosen"}</p>
+                        <p className="text-[10px] text-gray-400 font-bold mt-0.5">{item.formData.shirtSize ? `Size ${item.formData.shirtSize} T-Shirt` : ""}</p>
+                      </td>
 
-              {/* Automated Reminder Email Dispatch Desk */}
-              <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 space-y-2.5 shadow-2xs">
-                <span className="text-[10px] font-black uppercase text-brand-blue tracking-wider block flex items-center gap-1">
-                  📧 Gmail Reminder Terminal
-                </span>
-                
-                {!googleToken ? (
-                  <div className="space-y-1.5">
-                    <p className="text-[10.5px] text-gray-500 leading-normal font-medium">
-                      Link your Google account in the dashboard top HUD to enable one-click automated payment alerts from your own email.
-                    </p>
-                    <div className="inline-flex items-center gap-1.5 text-[10px] font-bold text-gray-500 bg-slate-100 p-1.5 px-3 rounded-lg border border-gray-200">
-                      <MailWarning className="w-4 h-4 text-gray-400" />
-                      <span>Reminder dispatching currently offline</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <p className="text-[10.5px] text-gray-500 leading-normal font-medium">
-                      Send a committee-styled payment deadline notification to this member (<span className="text-brand-blue font-bold font-mono">{selectedAttendee.formData.email}</span>).
-                    </p>
-                    
-                    {reminderSendStatus[selectedAttendee.ref] === "sending" ? (
-                      <button
-                        type="button"
-                        disabled
-                        className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-lg bg-slate-150 text-gray-400 font-bold text-xs border border-gray-250"
-                      >
-                        <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-blue" />
-                        <span>Sending payment notification...</span>
-                      </button>
-                    ) : reminderSendStatus[selectedAttendee.ref] === "sent" ? (
-                      <div className="space-y-1.5 animate-in zoom-in-95 duration-150">
-                        <div className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-lg bg-emerald-50 text-emerald-800 font-extrabold text-xs border border-emerald-200">
-                          <MailCheck className="w-4 h-4 text-emerald-600 animate-bounce" />
-                          <span>Success! Alert sent under {googleUser?.email}</span>
+                      {/* Add-on badges */}
+                      <td className="px-6 py-4 text-center">
+                        <div className="inline-flex flex-wrap gap-1 items-center justify-center">
+                          {isTicket && (
+                            <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 text-[9px] font-black uppercase px-2 py-0.5 rounded-sm flex items-center gap-0.5" title="Football ticket purchased">
+                              <Ticket className="w-2.5 h-2.5 text-emerald-600" /> Ticket
+                            </span>
+                          )}
+                          {isJacket && (
+                            <span className="bg-indigo-50 text-indigo-800 border border-indigo-200 text-[9px] font-black uppercase px-2 py-0.5 rounded-sm flex items-center gap-0.5" title="Carhartt Style Jacket purchased">
+                              <ShoppingBag className="w-2.5 h-2.5 text-indigo-600" /> Jacket ({item.formData.jacketSize})
+                            </span>
+                          )}
+                          {!isTicket && !isJacket && (
+                            <span className="text-[9.5px] text-gray-350 font-bold bg-slate-50 border border-slate-150 px-2 py-0.5 rounded-xs">No Addons</span>
+                          )}
                         </div>
+                      </td>
+
+                      {/* SUM total */}
+                      <td className="px-6 py-4 text-right font-mono">
+                        <p className="font-black text-slate-950 text-[13.5px]">${total}</p>
+                        {(() => {
+                          const { depositDue, balanceDue } = calculateDepositAndBalance(item.formData);
+                          return (
+                            <div className="flex items-center justify-end gap-1.5 text-[9.5px] font-sans font-extrabold mt-1 tracking-tight">
+                              <span className="text-brand-blue" title="Required deposit due July 19">7/19: ${depositDue}</span>
+                              <span className="text-gray-300">|</span>
+                              <span className="text-amber-700" title="Remaining balance due September 4">9/4: ${balanceDue}</span>
+                            </div>
+                          );
+                        })()}
+                      </td>
+
+                      {/* Action parameters */}
+                      <td className="px-6 py-4 text-right space-x-2" onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
-                          onClick={() => handleSendReminder(selectedAttendee)}
-                          className="w-full text-center text-[10px] text-slate-400 hover:text-slate-650 hover:underline font-semibold block pt-0.5"
+                          onClick={() => setSelectedAttendee(item)}
+                          className="px-2.5 py-1.5 rounded-lg bg-brand-blue hover:bg-brand-blue-dark text-white font-extrabold text-[10.5px] cursor-pointer shadow-xs transition-all"
                         >
-                          Send another reminder?
+                          View Profile
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteEntry(item.ref)}
+                          className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600 cursor-pointer transition-colors inline-flex items-center justify-center align-middle border border-transparent hover:border-red-100"
+                          title="Delete entry"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          ) : (
+            <div className="text-center py-14 px-4">
+              <Layers className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <p className="text-xs font-semibold text-gray-500">No registered intakes match the active filter criteria.</p>
+              <button
+                onClick={() => {
+                  setSearchTerm("");
+                  setFilterPackage("all");
+                  setFilterJacket("all");
+                }}
+                className="mt-2 text-xs font-bold text-brand-blue hover:underline cursor-pointer"
+              >
+                Clear active filters
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Slide-over Profile Detail Sheet (Opens from the right to allow the list to be fully expanded) */}
+      {selectedAttendee && (
+        <div className="fixed inset-0 z-55 overflow-hidden" aria-labelledby="slide-over-title" role="dialog" aria-modal="true" id="registrant-slideover-container">
+          <div className="absolute inset-0 overflow-hidden">
+            {/* Dark back-blur panel overlay */}
+            <div 
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity duration-300 animate-in fade-in" 
+              onClick={() => setSelectedAttendee(null)}
+              aria-hidden="true"
+            />
+
+            <div className="fixed inset-y-0 right-0 pl-10 max-w-full flex">
+              <div className="w-screen max-w-md bg-white shadow-2xl flex flex-col border-l border-slate-250 animate-in slide-in-from-right duration-300 ease-out" id="registrant-detail-sidebar">
+                
+                {/* Header Panel */}
+                <div className="bg-slate-950 font-display font-black text-xs uppercase tracking-widest text-brand-blue-light p-4.5 flex items-center justify-between border-b border-slate-850">
+                  <div className="flex items-center gap-2">
+                    <span className="bg-brand-blue text-white px-2.5 py-0.5 rounded-sm font-mono text-[10px] tracking-wide">
+                      {selectedAttendee.ref}
+                    </span>
+                    <span>Registrant Profile Detail</span>
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={() => setSelectedAttendee(null)}
+                    className="text-slate-450 hover:text-white transition-colors cursor-pointer p-1.5 rounded-lg hover:bg-slate-800 flex items-center justify-center border border-transparent hover:border-slate-700"
+                    title="Close Details Overview"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Content body panel */}
+                <div className="flex-1 overflow-y-auto p-5 space-y-6 text-xs text-gray-700 font-sans">
+                  {/* Full Header Name */}
+                  <div className="space-y-1.5">
+                    <h4 className="font-display font-black text-gray-950 text-lg leading-snug">
+                      {selectedAttendee.formData.fullName}
+                    </h4>
+                    <p className="text-[10px] text-gray-400 font-medium flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5 text-gray-400" /> Registered on: <span className="font-semibold text-slate-650">{new Date(selectedAttendee.date).toLocaleDateString()}</span> at <span className="font-mono text-slate-650">{new Date(selectedAttendee.date).toLocaleTimeString()}</span>
+                    </p>
+                  </div>
+
+                  {/* Contact Block Grid */}
+                  <div className="border-t border-gray-100 pt-4 space-y-2.5">
+                    <p className="flex items-center gap-2.5 font-medium text-slate-800">
+                      <Mail className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                      <span className="truncate hover:underline select-all">{selectedAttendee.formData.email}</span>
+                    </p>
+                    <p className="flex items-center gap-2.5 font-medium text-slate-800">
+                      <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                      <span className="select-all">{selectedAttendee.formData.phone}</span>
+                    </p>
+                  </div>
+
+                  {/* Automated Reminder Email Dispatch Desk */}
+                  <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 space-y-2.5 shadow-2xs">
+                    <span className="text-[10px] font-black uppercase text-brand-blue tracking-wider block flex items-center gap-1">
+                      📧 Gmail Reminder Terminal
+                    </span>
+                    
+                    {!googleToken ? (
+                      <div className="space-y-1.5">
+                        <p className="text-[10.5px] text-gray-500 leading-normal font-medium">
+                          Link your Google account in the dashboard top credentials panel above to enable instant automated payment alerts from your own mailbox.
+                        </p>
+                        <div className="inline-flex items-center gap-1.5 text-[10px] font-bold text-gray-500 bg-slate-100 p-1.5 px-3 rounded-lg border border-gray-200">
+                          <MailWarning className="w-4 h-4 text-gray-400" />
+                          <span>Reminder dispatcher matches offline</span>
+                        </div>
                       </div>
                     ) : (
-                      <div className="space-y-1.5">
-                        <button
-                          type="button"
-                          onClick={() => handleSendReminder(selectedAttendee)}
-                          className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-brand-blue hover:bg-brand-blue-dark text-white font-extrabold text-xs shadow-xs transition-all cursor-pointer min-h-[38px]"
-                        >
-                          <Mail className="w-3.5 h-3.5 text-white" />
-                          <span>Send Payment Reminder Email</span>
-                        </button>
+                      <div className="space-y-2">
+                        <p className="text-[10.5px] text-gray-550 leading-normal font-medium">
+                          Send a committee-styled payment deadline notification to this member (<span className="text-brand-blue font-bold font-mono">{selectedAttendee.formData.email}</span>).
+                        </p>
                         
-                        {reminderSendStatus[selectedAttendee.ref] === "failed" && (
-                          <div className="bg-red-50 border border-red-150 p-2 rounded-lg text-left text-red-700 space-y-0.5">
-                            <span className="font-extrabold block text-[9.5px] uppercase text-red-500 tracking-wider">⚠️ Dispatch error</span>
-                            <p className="text-[10px] leading-normal font-semibold">{reminderErrorMsg || "SMTP connection failed."}</p>
+                        {reminderSendStatus[selectedAttendee.ref] === "sending" ? (
+                          <button
+                            type="button"
+                            disabled
+                            className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-lg bg-slate-150 text-gray-400 font-bold text-xs border border-gray-250 animate-pulse"
+                          >
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-brand-blue" />
+                            <span>Sending payment notification...</span>
+                          </button>
+                        ) : reminderSendStatus[selectedAttendee.ref] === "sent" ? (
+                          <div className="space-y-1.5 animate-in zoom-in-95 duration-155">
+                            <div className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-lg bg-emerald-50 text-emerald-800 font-extrabold text-xs border border-emerald-200">
+                              <MailCheck className="w-4 h-4 text-emerald-600 animate-bounce" />
+                              <span>Success! Alert sent under {googleUser?.email}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleSendReminder(selectedAttendee)}
+                              className="w-full text-center text-[10px] text-slate-400 hover:text-slate-650 hover:underline font-semibold block pt-0.5 cursor-pointer"
+                            >
+                              Send another reminder?
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleSendReminder(selectedAttendee)}
+                              className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-brand-blue hover:bg-brand-blue-dark text-white font-extrabold text-xs shadow-xs transition-all cursor-pointer min-h-[38px]"
+                            >
+                              <Mail className="w-3.5 h-3.5 text-white" />
+                              <span>Send Payment Reminder Email</span>
+                            </button>
+                            
+                            {reminderSendStatus[selectedAttendee.ref] === "failed" && (
+                              <div className="bg-red-50 border border-red-155 p-2.5 rounded-lg text-left text-red-700 space-y-0.5">
+                                <span className="font-extrabold block text-[9.5px] uppercase text-red-500 tracking-wider">⚠️ Dispatch error</span>
+                                <p className="text-[10px] leading-normal font-semibold text-red-600">{reminderErrorMsg || "SMTP connection failed."}</p>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
                     )}
                   </div>
-                )}
-              </div>
 
-              {/* Homecoming Treasury Milestone Balance Sheet */}
-              {(() => {
-                const { total } = calculateDepositAndBalance(selectedAttendee.formData);
-                const memberMilestones = getPaymentMilestones(selectedAttendee.formData.selectedPackageId, selectedAttendee.formData.addDetroitJacket);
-                return (
-                  <div className="border-t border-gray-100 pt-3 space-y-2.5">
-                    <span className="text-[10px] uppercase font-extrabold text-slate-500 tracking-wider block">Treasury Payment Milestones</span>
-                    <div className="bg-slate-50 border border-gray-250 p-3 rounded-xl space-y-2.5 text-xs">
-                      <div className="flex items-center justify-between font-extrabold text-slate-800">
-                        <span>Total Registered Cost:</span>
-                        <span className="font-mono text-gray-950 text-sm">${total}</span>
-                      </div>
-                      <div className="border-t border-gray-200/80 pt-2 space-y-2">
-                        {memberMilestones.map((m, mIdx) => (
-                          <div key={mIdx} className="flex flex-col gap-1 bg-white/70 border border-gray-150 p-2 rounded-lg">
-                            <div className="flex items-center justify-between text-[11px] font-bold">
-                              <span className="text-gray-800">{m.date} Milestone</span>
-                              <span className={`font-mono font-black ${m.amount === 0 ? "text-emerald-600" : "text-brand-blue"}`}>
-                                ${m.amount}
-                              </span>
-                            </div>
-                            {m.amount > 0 ? (
-                              <div className="text-[9.5px] text-gray-450 font-medium flex flex-wrap gap-x-2 gap-y-0.5 leading-tight">
-                                {m.items.map((it, itIdx) => (
-                                  <span key={itIdx} className="inline-flex items-center gap-0.5 whitespace-nowrap">
-                                    <span className="w-1 h-1 rounded-full bg-slate-300" />
-                                    {it.name}: ${it.amount}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-[9.5px] text-emerald-600 font-bold block leading-none">Fully cleared • No installment</span>
-                            )}
+                  {/* Homecoming Treasury Milestone Balance Sheet */}
+                  {(() => {
+                    const { total } = calculateDepositAndBalance(selectedAttendee.formData);
+                    const memberMilestones = getPaymentMilestones(selectedAttendee.formData.selectedPackageId, selectedAttendee.formData.addDetroitJacket);
+                    return (
+                      <div className="border-t border-gray-100 pt-4 space-y-2.5">
+                        <span className="text-[10px] uppercase font-extrabold text-slate-500 tracking-wider block">Treasury Payment Milestones</span>
+                        <div className="bg-slate-50 border border-gray-200 p-3 rounded-xl space-y-2.5 text-xs">
+                          <div className="flex items-center justify-between font-extrabold text-slate-800">
+                            <span>Total Registered Cost:</span>
+                            <span className="font-mono text-gray-950 text-sm">${total}</span>
                           </div>
-                        ))}
+                          <div className="border-t border-gray-200/80 pt-2 space-y-2">
+                            {memberMilestones.map((m, mIdx) => (
+                              <div key={mIdx} className="flex flex-col gap-1 bg-white border border-gray-150 p-2 rounded-lg">
+                                <div className="flex items-center justify-between text-[11px] font-bold">
+                                  <span className="text-gray-800">{m.date} Milestone</span>
+                                  <span className={`font-mono font-black ${m.amount === 0 ? "text-emerald-600" : "text-brand-blue"}`}>
+                                    ${m.amount}
+                                  </span>
+                                </div>
+                                {m.amount > 0 ? (
+                                  <div className="text-[9.5px] text-gray-450 font-medium flex flex-wrap gap-x-2 gap-y-0.5 leading-tight">
+                                    {m.items.map((it, itIdx) => (
+                                      <span key={itIdx} className="inline-flex items-center gap-0.5 whitespace-nowrap">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
+                                        {it.name}: ${it.amount}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="text-[9.5px] text-emerald-600 font-bold block leading-none">Fully cleared • No installment</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Shipping Address Box */}
+                  <div className="border-t border-gray-100 pt-4 space-y-1.5">
+                    <span className="text-[9px] uppercase font-bold text-gray-400 tracking-wider block">Mailing Coordinates</span>
+                    <div className="bg-slate-50 border border-slate-100 rounded-lg p-3 font-bold text-slate-800 leading-relaxed font-mono">
+                      {selectedAttendee.formData.shippingAddress.street}
+                      <br />
+                      {selectedAttendee.formData.shippingAddress.city}, {selectedAttendee.formData.shippingAddress.state} {selectedAttendee.formData.shippingAddress.zipCode}
+                    </div>
+                  </div>
+
+                  {/* Sizing & Core Choices */}
+                  <div className="border-t border-gray-100 pt-4 space-y-2">
+                    <span className="text-[9px] uppercase font-bold text-gray-400 tracking-wider block">Core Package Sizing</span>
+                    <div className="flex gap-4">
+                      <div>
+                        <span className="text-gray-400 text-[10px] block mb-1">Core Shirt</span>
+                        <span className="font-extrabold bg-blue-100 text-brand-blue border border-blue-250 px-2.5 py-1 rounded-md text-xs">
+                          {selectedAttendee.formData.shirtSize}
+                        </span>
+                      </div>
+                      {selectedAttendee.formData.addDetroitJacket && (
+                        <div>
+                          <span className="text-gray-400 text-[10px] block mb-1">Jacket Size</span>
+                          <span className="font-extrabold bg-indigo-50 text-indigo-850 border border-indigo-200 px-2.5 py-1 rounded-md text-xs">
+                            {selectedAttendee.formData.jacketSize}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Jacket Customization Details */}
+                  {selectedAttendee.formData.addDetroitJacket && (
+                    <div className="border-t border-gray-100 pt-4 space-y-2.5 bg-indigo-50/20 p-3 rounded-xl border border-indigo-100/50">
+                      <span className="text-[9.5px] uppercase font-black text-indigo-900 tracking-wider block flex items-center gap-1.5">
+                        <ShoppingBag className="w-3.5 h-3.5 text-indigo-700" /> Jacket Line Embroidery
+                      </span>
+                      
+                      <div className="space-y-1.5 text-[11px]">
+                        <p className="flex justify-between border-b border-indigo-100/20 pb-1.5">
+                          <span className="text-gray-400">Crossing Year:</span>
+                          <strong className="text-gray-900 font-mono">{selectedAttendee.formData.jacketCrossingYear}</strong>
+                        </p>
+                        <p className="flex justify-between border-b border-indigo-100/20 pb-1.5">
+                          <span className="text-gray-400">Line Name:</span>
+                          <strong className="text-slate-900 select-all font-bold">"{selectedAttendee.formData.jacketLineName}"</strong>
+                        </p>
+                        <p className="flex justify-between border-b border-indigo-100/20 pb-1.5">
+                          <span className="text-gray-400">Entire Line Name:</span>
+                          <strong className="text-slate-950 select-all font-bold">"{selectedAttendee.formData.jacketEntireLineName}"</strong>
+                        </p>
+                        <p className="flex justify-between pb-0.5">
+                          <span className="text-gray-400">Line Number:</span>
+                          <strong className="text-slate-900 font-mono bg-indigo-100/50 px-1.5 py-0.5 rounded-md">{selectedAttendee.formData.jacketLineNumber}</strong>
+                        </p>
                       </div>
                     </div>
-                  </div>
-                );
-              })()}
+                  )}
 
-              {/* Shipping Address Box */}
-              <div className="border-t border-gray-100 pt-3 space-y-1.5">
-                <span className="text-[9px] uppercase font-bold text-gray-400 tracking-wider block">Mailing Coordinates</span>
-                <div className="bg-slate-50 border border-slate-100 rounded-lg p-2.5 font-bold text-gray-800 leading-relaxed">
-                  {selectedAttendee.formData.shippingAddress.street}
-                  <br />
-                  {selectedAttendee.formData.shippingAddress.city}, {selectedAttendee.formData.shippingAddress.state} {selectedAttendee.formData.shippingAddress.zipCode}
-                </div>
-              </div>
-
-              {/* Sizing & Core Choices */}
-              <div className="border-t border-gray-100 pt-3 space-y-1.5">
-                <span className="text-[9px] uppercase font-bold text-gray-400 tracking-wider block">Core Package Sizing</span>
-                <div className="flex gap-4">
-                  <div>
-                    <span className="text-gray-400 block mb-0.5">Core Shirt</span>
-                    <span className="font-black bg-blue-100 text-brand-blue px-2 py-0.5 rounded-sm">
-                      SIZE {selectedAttendee.formData.shirtSize}
-                    </span>
-                  </div>
-                  {selectedAttendee.formData.addDetroitJacket && (
-                    <div>
-                      <span className="text-gray-400 block mb-0.5">Jacket Size</span>
-                      <span className="font-black bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-sm">
-                        SIZE {selectedAttendee.formData.jacketSize}
-                      </span>
+                  {/* Committee Notes / Wishes */}
+                  <div className="border-t border-gray-100 pt-4 space-y-1.5">
+                    <span className="text-[9px] uppercase font-bold text-gray-400 tracking-wider block">Committee Notes & Requests</span>
+                    <div className="bg-slate-50 border border-slate-150 rounded-lg p-3 text-[11px] leading-relaxed text-gray-750 min-h-[50px] italic">
+                      {selectedAttendee.formData.specialRequests ? (
+                        `"${selectedAttendee.formData.specialRequests}"`
+                      ) : (
+                        <span className="text-gray-300">No notes provided for this registration.</span>
+                      )}
                     </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Jacket Customization Details */}
-              {selectedAttendee.formData.addDetroitJacket && (
-                <div className="border-t border-gray-100 pt-3 space-y-2.5 bg-indigo-50/30 p-2.5 rounded-lg border border-indigo-100/50">
-                  <span className="text-[9px] uppercase font-bold text-indigo-900 tracking-wider block flex items-center gap-1">
-                    <ShoppingBag className="w-3 h-3" /> Jacket Embroidery Details
-                  </span>
-                  
-                  <div className="space-y-1.5 text-[11px]">
-                    <p className="flex justify-between border-b border-indigo-100/30 pb-1">
-                      <span className="text-gray-400">Crossing Year:</span>
-                      <strong className="text-gray-900">{selectedAttendee.formData.jacketCrossingYear}</strong>
-                    </p>
-                    <p className="flex justify-between border-b border-indigo-100/30 pb-1">
-                      <span className="text-gray-400">Line Name:</span>
-                      <strong className="text-gray-900">{selectedAttendee.formData.jacketLineName}</strong>
-                    </p>
-                    <p className="flex justify-between border-b border-indigo-100/30 pb-1">
-                      <span className="text-gray-400">Entire Line Name:</span>
-                      <strong className="text-gray-900">{selectedAttendee.formData.jacketEntireLineName}</strong>
-                    </p>
-                    <p className="flex justify-between pb-1">
-                      <span className="text-gray-400">Line Number:</span>
-                      <strong className="text-gray-900">#{selectedAttendee.formData.jacketLineNumber}</strong>
-                    </p>
                   </div>
                 </div>
-              )}
 
-              {/* Committee Notes / Wishes */}
-              <div className="border-t border-gray-100 pt-3 space-y-1.5">
-                <span className="text-[9px] uppercase font-bold text-gray-400 tracking-wider block">Committee Notes & Requests</span>
-                <div className="bg-slate-50 border border-slate-100 rounded-lg p-2.5 text-[11px] leading-relaxed text-gray-650 min-h-[50px] italic">
-                  {selectedAttendee.formData.specialRequests ? (
-                    `"${selectedAttendee.formData.specialRequests}"`
-                  ) : (
-                    <span className="text-gray-300">No notes provided for this registration.</span>
-                  )}
+                {/* Footer panel controls */}
+                <div className="border-t border-gray-100 p-4.5 bg-slate-50 flex items-center justify-end gap-2.5 flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteEntry(selectedAttendee.ref)}
+                    className="flex items-center gap-1 px-3 py-2 border border-red-200 text-red-650 rounded-lg bg-white hover:bg-red-50 text-[11px] font-bold cursor-pointer transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAttendee(null)}
+                    className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-gray-700 rounded-lg text-[11px] font-bold cursor-pointer"
+                  >
+                    Close
+                  </button>
                 </div>
+
               </div>
             </div>
-          ) : (
-            <div className="p-8 text-center text-gray-400 text-xs">
-              <Eye className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-              <span>Click any member row on the left panel to review full customized sizing details, shipping addresses, and lineage embroidery.</span>
-            </div>
-          )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Custom Stateful Deletion Modal to bypass iframe window.confirm limitations cleanly */}
       {deleteConfirmRef && (() => {
