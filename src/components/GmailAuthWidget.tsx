@@ -1,6 +1,6 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { User } from "firebase/auth";
-import { Mail, ShieldCheck, Link2, LogOut, Loader2 } from "lucide-react";
+import { Mail, ShieldCheck, Link2, LogOut, Loader2, AlertTriangle } from "lucide-react";
 
 interface GmailAuthWidgetProps {
   user: User | null;
@@ -17,6 +17,16 @@ export default function GmailAuthWidget({
   onSignOut,
   isLoading = false
 }: GmailAuthWidgetProps) {
+  const [isIframe, setIsIframe] = useState(false);
+
+  useEffect(() => {
+    try {
+      setIsIframe(window.self !== window.top);
+    } catch (e) {
+      setIsIframe(true);
+    }
+  }, []);
+
   if (user && accessToken) {
     return (
       <div className="flex flex-col sm:flex-row items-center gap-3.5 bg-slate-900 border border-slate-800 p-3 sm:px-4 rounded-xl text-xs text-white max-w-xl mx-auto shadow-sm" id="gmail-connected-widget">
@@ -56,7 +66,7 @@ export default function GmailAuthWidget({
   }
 
   return (
-    <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl text-center max-w-xl mx-auto shadow-sm space-y-3" id="gmail-disconnected-widget">
+    <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl text-center max-w-xl mx-auto shadow-sm space-y-3.5" id="gmail-disconnected-widget">
       <div className="flex flex-col items-center justify-center gap-1 text-center">
         <div className="p-2 bg-blue-500/10 text-brand-blue-light rounded-lg border border-brand-blue-light/10">
           <Mail className="w-5 h-5 text-brand-blue-light" />
@@ -70,6 +80,29 @@ export default function GmailAuthWidget({
           </p>
         </div>
       </div>
+
+      {isIframe && (
+        <div className="bg-amber-500/10 border border-amber-500/20 p-3 rounded-lg text-amber-400 text-left max-w-md mx-auto space-y-1.5 shadow-inner">
+          <div className="flex items-center gap-1.5 font-bold text-[10px] uppercase tracking-wide">
+            <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <span>Iframe Popup Shield Active</span>
+          </div>
+          <p className="text-[9.5px] leading-relaxed text-slate-300 font-medium">
+            Google OAuth connection popups cannot complete inside embedded workspace previews due to strict browser sandbox controls on cross-domain frames.
+          </p>
+          <div className="pt-1">
+            <a
+              href={`${window.location.origin}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-550 hover:bg-amber-600 text-slate-950 text-[10px] font-black uppercase transition-all cursor-pointer"
+            >
+              <span>Authorize In New Tab</span>
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+            </a>
+          </div>
+        </div>
+      )}
 
       <div className="flex justify-center pt-1">
         {isLoading ? (

@@ -359,7 +359,7 @@ export default function ConfirmationStep({
               </div>
               
               <p className="text-[11px] text-gray-500 leading-normal">
-                To simplify preparation, the committee has mapped out the official itemized installment steps. All payments sent should align with these dates:
+                To simplify preparation, the committee has mapped out the official installment schedule steps. All payments sent should align with these dates:
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 mt-2">
@@ -388,17 +388,14 @@ export default function ConfirmationStep({
                           <p className="text-[10px] text-gray-400">No installment due on this date for your selected package tier.</p>
                         </div>
                       ) : (
-                        <ul className="space-y-1">
-                          {m.items.map((item, itemIdx) => (
-                            <li key={itemIdx} className="flex items-center justify-between text-[10px] text-gray-500 font-semibold leading-normal">
-                              <span className="flex items-center gap-1.5 max-w-[75%]">
-                                <span className={`w-1 h-1 rounded-full ${item.isDeposit ? "bg-brand-blue/60" : "bg-indigo-400/60"}`} />
-                                <span className="truncate" title={item.name}>{item.name}</span>
-                              </span>
-                              <span className="font-mono text-gray-700 font-bold">${item.amount}</span>
-                            </li>
-                          ))}
-                        </ul>
+                        <div className="space-y-1 py-1">
+                          <span className="text-[9px] font-bold text-brand-blue bg-blue-550/10 text-brand-blue px-1.5 py-0.5 rounded-xs uppercase tracking-wider inline-block">
+                            Overall Amount Due
+                          </span>
+                          <p className="text-[10px] text-gray-400 leading-normal">
+                            Multi-installment overall payment due on this date.
+                          </p>
+                        </div>
                       )}
                     </div>
                   </div>

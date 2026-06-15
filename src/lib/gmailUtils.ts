@@ -273,3 +273,117 @@ export function generatePaymentReminderEmail(formData: OrderForm, refCode: strin
     </div>
   `;
 }
+
+/**
+ * Generates a polished HTML email layout for the Custom Varsity Jacket Sizing & Details Verification.
+ */
+export function generateJacketVerificationEmail(formData: OrderForm, refCode: string): string {
+  return `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f5f3ff; padding: 25px; font-size: 14px; line-height: 1.6; color: #3b0764;">
+      <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #c084fc; box-shadow: 0 4px 10px -2px rgba(147, 51, 234, 0.08);">
+        
+        <!-- Indigo/Purple Customization Branding Header banner -->
+        <div style="background-color: #6b21a8; color: #ffffff; padding: 24px 30px; text-align: center;">
+          <h2 style="margin: 0; font-size: 18px; font-weight: 950; text-transform: uppercase; letter-spacing: 1px;">🧥 EMBROIDERY DETAILS VERIFICATION</h2>
+          <p style="margin: 4px 0 0 0; font-size: 11px; font-weight: 700; color: #f3e8ff; text-transform: uppercase; letter-spacing: 0.5px;">BBI Signature Carhartt-Style Varsity Jacket</p>
+        </div>
+
+        <div style="padding: 30px;">
+          <p style="font-size: 15px; font-weight: bold; color: #581c87; margin-top: 0;">Good morning, Brother ${formData.fullName},</p>
+          <p>
+            You are receiving this verification notice because you purchased the **Custom Carhartt-Style Varsity Jacket** with your homecoming 2026 packet. Before we submit our final sizing roster and line embroidery specs to our contracted manufacturer, we must confirm that your custom details are 100% correct:
+          </p>
+
+          <div style="background-color: #faf5ff; border: 1.5px solid #e9d5ff; border-radius: 8px; padding: 18px; margin: 20px 0;">
+            <h4 style="margin: 0 0 12px 0; font-size: 13px; font-weight: bold; color: #6b21a8; text-transform: uppercase; border-bottom: 1px solid #e9d5ff; padding-bottom: 6px;">Your Registered Embroidery Sheet</h4>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px; color: #581c87;">
+              <tr style="border-bottom: 1px solid #f3e8ff;"><td style="padding: 6px 0; font-weight: bold;">Jacket Sizing:</td><td style="text-align: right; font-weight: bold;">Size ${formData.jacketSize || "N/A"}</td></tr>
+              <tr style="border-bottom: 1px solid #f3e8ff;"><td style="padding: 6px 0; font-weight: bold;">Crossing Year:</td><td style="text-align: right; font-family: monospace; font-weight: bold;">${formData.jacketCrossingYear || "N/A"}</td></tr>
+              <tr style="border-bottom: 1px solid #f3e8ff;"><td style="padding: 6px 0; font-weight: bold;">Line Initials/Name:</td><td style="text-align: right; font-weight: bold;">"${formData.jacketLineName || "N/A"}"</td></tr>
+              <tr style="border-bottom: 1px solid #f3e8ff;"><td style="padding: 6px 0; font-weight: bold;">Line Position Number:</td><td style="text-align: right; font-family: monospace; font-weight: bold;">#${formData.jacketLineNumber || "N/A"}</td></tr>
+              <tr><td style="padding: 6px 0; font-weight: bold;">Full Ship (Back Name):</td><td style="text-align: right; font-weight: bold;">"${formData.jacketEntireLineName || "N/A"}"</td></tr>
+            </table>
+          </div>
+
+          <p style="background-color: #fdf2f8; border: 1px solid #fbcfe8; padding: 12px; border-radius: 6px; font-size: 12px; color: #9d174d; font-weight: bold;">
+            ⚠️ PLEASE NOTE: Custom bespoke varsity jackets cannot be returned or re-stitched once production begins. Please read the specs above carefully.
+          </p>
+
+          <p style="margin-top: 20px;">
+            <strong>Immediate Action Required:</strong> If everything looks flawless, no action is needed. If you spotted an error or need to alter a name, size, or number, please **reply to this email immediately** with your adjustments.
+          </p>
+
+          <p style="margin-top: 30px; font-size: 12.5px; color: #581c87; line-height: 1.5; border-top: 1px solid #e9d5ff; padding-top: 15px;">
+            Fraternally and in Sigma,<br />
+            <strong>BBI Chapter Custom Gear Committee</strong><br />
+            Phi Beta Sigma Fraternity, Inc.
+          </p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Generates a polished HTML email layout for the Final Balance Payment Ultimatum (Due Sept 4).
+ */
+export function generateFinalBalanceReminderEmail(formData: OrderForm, refCode: string): string {
+  const pkg = PACKAGE_OPTIONS.find((p) => p.id === formData.selectedPackageId);
+  const basePrice = pkg?.price || 0;
+  const jacketPrice = formData.addDetroitJacket ? 135 : 0;
+  const grandTotal = basePrice + jacketPrice;
+  const milestones = getPaymentMilestones(formData.selectedPackageId, formData.addDetroitJacket);
+  const balanceDue = milestones.find((m) => m.label.includes("Final Balance"))?.amount || (grandTotal - (formData.addDetroitJacket ? 170 : 100));
+
+  return `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #fff5f5; padding: 25px; font-size: 14px; line-height: 1.6; color: #7f1d1d;">
+      <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; border: 1px solid #fca5a5; box-shadow: 0 4px 10px -2px rgba(239, 68, 68, 0.08);">
+        
+        <!-- Red/Crimson Urgent branding Header banner -->
+        <div style="background-color: #b91c1c; color: #ffffff; padding: 24px 30px; text-align: center;">
+          <h2 style="margin: 0; font-size: 18px; font-weight: 950; text-transform: uppercase; letter-spacing: 1px;">🚨 FINAL REVENUE CLEARANCE NOTICE</h2>
+          <p style="margin: 4px 0 0 0; font-size: 11px; font-weight: 700; color: #fee2e2; text-transform: uppercase; letter-spacing: 0.5px;">BBI Chapter Treasury Team • Deadline September 4</p>
+        </div>
+
+        <div style="padding: 30px;">
+          <p style="font-size: 15px; font-weight: bold; color: #991b1b; margin-top: 0;">Good afternoon, Brother ${formData.fullName},</p>
+          <p>
+            We are fast approaching the absolute final deadline for the **BBI Homecoming 2026 Experience** accounts clearance. On **September 4, 2026**, the treasury must transfer all finalized funds to caterers, box suppliers, and tailgating permits providers.
+          </p>
+
+          <p>
+            Our registry shows that your account remains open under Reference: <strong style="font-family: monospace; color: #b91c1c;">${refCode}</strong>.
+          </p>
+
+          <div style="background-color: #fef2f2; border: 1px solid #fee2e2; border-radius: 8px; padding: 15px; margin: 20px 0;">
+            <p style="margin: 0 0 8px 0; font-size: 12px; font-weight: bold; color: #991b1b; text-transform: uppercase;">Outstanding Account Summary</p>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+              <tr><td style="color: #991b1b; padding: 2px 0;"><strong>Active Package:</strong></td><td style="text-align: right; font-weight: bold;">${pkg?.name}</td></tr>
+              <tr><td style="color: #991b1b; padding: 2px 0;"><strong>Jacket Addon (Included?):</strong></td><td style="text-align: right; font-weight: bold;">${formData.addDetroitJacket ? "Yes (Size " + formData.jacketSize + ")" : "No"}</td></tr>
+              <tr style="border-top: 1px solid #fee2e2; font-size: 14px;"><td style="color: #991b1b; padding: 8px 0 2px 0;"><strong>Grand Total Registered:</strong></td><td style="text-align: right; font-weight: black; padding-top: 8px;">$${grandTotal}</td></tr>
+              <tr style="font-size: 15px; font-weight: 950; color: #b91c1c;"><td style="padding: 2px 0;"><strong>Outstanding Balance Due:</strong></td><td style="text-align: right; font-family: monospace;">$${balanceDue}</td></tr>
+            </table>
+          </div>
+
+          <div style="background-color: #b91c1c; color: #ffffff; padding: 15px; border-radius: 8px; font-size: 13px; margin: 20px 0;">
+            <strong>🗳️ Submit Zelle Payment Now:</strong><br />
+            Remit your remaining balance of **$${balanceDue}** immediately via Zelle to avoid cancellation of your custom garment blocks or catering RSVP spots. Always enter:
+            <div style="font-family: monospace; font-weight: 900; font-size: 14px; text-align: center; border: 1px dashed #fca5a5; padding: 6px; background-color: #7f1d1d; border-radius: 4px; margin-top: 6px; color: #ffffff;">
+              Memo Reference Code: ${refCode}
+            </div>
+          </div>
+
+          <p>
+            If you have recently transferred funds or set up a special billing extension with our Chapter Treasury chair, please reply with a screenshot or details of your Zelle receipt so we can credit your balance immediately.
+          </p>
+
+          <p style="margin-top: 30px; font-size: 12.5px; color: #991b1b; line-height: 1.5; border-top: 1px solid #fee2e2; padding-top: 15px;">
+            Fraternally and in Sigma,<br />
+            <strong>BBI Homecoming Planning Committee</strong><br />
+            Phi Beta Sigma Fraternity, Inc.
+          </p>
+        </div>
+      </div>
+    </div>
+  `;
+}
