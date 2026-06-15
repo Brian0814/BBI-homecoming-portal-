@@ -26,7 +26,7 @@ export default function InfoStep({
           Step 1: Your Contact & Shipping Information
         </h3>
         <p className="mt-1 text-sm text-gray-500">
-          Please enter your contact info and shipping address where your Homecoming 2026 box items will be mailed.
+          Please enter your contact info and shipping address.
         </p>
       </div>
 
