@@ -18,6 +18,33 @@ const LOCAL_STORAGE_KEY = "bbi_homecoming_2026_order";
 const ORDER_HISTORY_KEY = "bbi_homecoming_2026_history";
 
 export default function App() {
+  // Password protection for entering the portal
+  const [isPortalAuthenticated, setIsPortalAuthenticated] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem("bbi_portal_authenticated") === "true";
+    } catch {
+      return false;
+    }
+  });
+  const [portalPasswordInput, setPortalPasswordInput] = useState<string>("");
+  const [portalPasswordError, setPortalPasswordError] = useState<string>("");
+  const [showPortalPassword, setShowPortalPassword] = useState<boolean>(false);
+
+  const handlePortalLoginSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (portalPasswordInput === "BBI2026") {
+      setIsPortalAuthenticated(true);
+      setPortalPasswordError("");
+      try {
+        sessionStorage.setItem("bbi_portal_authenticated", "true");
+      } catch (err) {
+        console.error(err);
+      }
+    } else {
+      setPortalPasswordError("Incorrect chapter password. Please check and try again.");
+    }
+  };
+
   // Flag to toggle between Standard Web Intake Form and Administrator Admin view
   const [isAdminView, setIsAdminView] = useState<boolean>(false);
 
@@ -317,6 +344,89 @@ export default function App() {
     { title: "Your Details", desc: "Size & Add-Ons" },
     { title: "Choose Package", desc: "Registration Package" }
   ];
+
+  if (!isPortalAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 relative overflow-hidden" id="portal-landing-gate">
+        {/* Deep navy/blue atmospheric backdrop accents */}
+        <div className="absolute top-0 right-0 w-96 h-96 bg-brand-blue-light/10 rounded-full translate-x-10 -translate-y-10 filter blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-96 h-96 bg-brand-blue-dark/20 rounded-full -translate-x-10 translate-y-10 filter blur-3xl pointer-events-none" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-blue-500/5 rounded-full filter blur-3xl pointer-events-none" />
+
+        <div className="max-w-md w-full bg-slate-950/40 backdrop-blur-md rounded-2xl border border-slate-800 p-6 sm:p-8 space-y-6 shadow-2xl relative z-10 animate-in fade-in zoom-in-95 duration-300">
+          <div className="text-center space-y-4">
+            <div className="inline-flex p-1 bg-white rounded-full border border-slate-850 shadow-md">
+              <BBIChapterLogo size={120} className="rounded-full" />
+            </div>
+            
+            <div className="space-y-1">
+              <span className="text-[10px] text-brand-blue-light font-black tracking-widest uppercase block">
+                PHI BETA SIGMA FRATERNITY, INC.
+              </span>
+              <span className="text-slate-400 text-[9px] font-bold uppercase tracking-wider block">
+                Beta Beta Iota Chapter • Est. 2004
+              </span>
+              <h2 className="font-display text-xl sm:text-2xl font-black uppercase tracking-tight text-white leading-tight">
+                Homecoming 2026 Package Portal
+              </h2>
+              <p className="text-[11px] text-slate-400 font-semibold max-w-xs mx-auto leading-relaxed">
+                Welcome, Brothers! Please enter the secure chapter password to unlock packages and register.
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handlePortalLoginSubmit} className="space-y-4">
+            <div className="space-y-1.5">
+              <label htmlFor="portalPass" className="block text-[9px] uppercase font-black tracking-wider text-slate-400">
+                Chapter Passcode
+              </label>
+              <div className="relative rounded-xl shadow-xs">
+                <input
+                  type={showPortalPassword ? "text" : "password"}
+                  id="portalPass"
+                  placeholder="Enter chapter password..."
+                  value={portalPasswordInput}
+                  onChange={(e) => {
+                    setPortalPasswordInput(e.target.value);
+                    setPortalPasswordError("");
+                  }}
+                  className="block w-full rounded-xl border px-4 py-3 text-sm text-white bg-slate-900/80 placeholder-slate-500 focus:outline-hidden focus:ring-2 focus:ring-offset-2 border-slate-800 focus:ring-brand-blue/40 focus:border-brand-blue focus:ring-offset-slate-950"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPortalPassword(!showPortalPassword)}
+                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 cursor-pointer"
+                >
+                  {showPortalPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
+                </button>
+              </div>
+              {portalPasswordError && (
+                <p className="text-[10.5px] text-red-500 font-semibold flex items-center gap-1 mt-1 leading-tight">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  {portalPasswordError}
+                </p>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              className="w-full inline-flex items-center justify-center gap-1.5 px-4 py-3 rounded-xl bg-brand-blue hover:bg-brand-blue-dark text-white font-extrabold text-xs shadow-md transition-all cursor-pointer min-h-[44px]"
+            >
+              <Check className="w-4 h-4 stroke-[3]" />
+              <span>Enter Brotherhood Portal</span>
+            </button>
+          </form>
+
+          <div className="text-center pt-2">
+            <span className="text-[9px] font-mono text-slate-600 block">
+              NOVEMBER 5-8, 2026 • CONWAY, SC • COASTAL CAROLINA
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-between" id="app-root-container">
