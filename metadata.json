@@ -1,0 +1,6 @@
+{
+  "name": "Homecoming Package Portal",
+  "description": "Custom package ordering system for BBI chapter of Phi Beta Sigma.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
