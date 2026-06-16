@@ -365,78 +365,191 @@ export default function AdminPortal({
 
 
 
-      {/* 2. Interactive Analytical Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4" id="stats-dashboard">
-        {/* Card 1: Submissions */}
-        <div className="bg-white border border-gray-200 p-4 rounded-2xl flex flex-col justify-between shadow-2xs relative overflow-hidden">
-          <div>
-            <span className="text-[10px] uppercase font-black text-gray-400 tracking-wider block">Intake Submissions</span>
-            <span className="font-mono text-2xl font-black text-brand-blue block mt-1">{totalEntries} Members</span>
+      {/* 2. Interactive Analytical Summary Cards - Upgraded Bento Grid Layout */}
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-5" id="stats-dashboard">
+        {/* Card 1: Treasury & Financials Hub */}
+        <div className="lg:col-span-7 md:col-span-12 bg-slate-950 border border-slate-850 p-6 rounded-2xl flex flex-col justify-between shadow-xs relative overflow-hidden text-white">
+          <div className="absolute top-0 right-0 w-48 h-48 bg-brand-blue/5 rounded-full translate-x-10 -translate-y-10 filter blur-2xl pointer-events-none" />
+          
+          <div className="space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-900 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="flex p-1.5 bg-slate-900 border border-slate-800 rounded-md text-brand-blue">
+                  <CreditCard className="w-4 h-4" />
+                </span>
+                <div>
+                  <span className="text-[10px] uppercase font-black text-slate-400 tracking-wider block">Treasury Summary</span>
+                  <span className="text-[9px] font-mono text-slate-500 block">Beta Beta Iota Chapter</span>
+                </div>
+              </div>
+              <span className="text-[9px] bg-slate-900 text-brand-blue-light border border-slate-800 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                Financial Hub
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center">
+              <div className="sm:col-span-5 space-y-1">
+                <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block">Total Projected</span>
+                <span className="font-mono text-3.5xl font-black text-white leading-tight block">
+                  ${totalRevenue.toLocaleString()}
+                </span>
+                <span className="text-[9.5px] text-slate-500 font-medium block">Grand checkout forecast</span>
+              </div>
+
+              {/* Vertical line divider */}
+              <div className="hidden sm:block sm:col-span-1 border-l border-slate-800 h-12 justify-self-center" />
+
+              <div className="sm:col-span-6 space-y-3">
+                {/* Deposit segment */}
+                <div className="flex items-center justify-between text-xs">
+                  <div className="space-y-0.5">
+                    <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider block">Due July 19 (Deposits)</span>
+                    <span className="font-mono text-base font-extrabold text-brand-blue-light">${totalDepositDueOverall.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                {/* Balance segment */}
+                <div className="flex items-center justify-between text-xs">
+                  <div className="space-y-0.5">
+                    <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider block">Due Sept 4 (Balances)</span>
+                    <span className="font-mono text-base font-extrabold text-amber-500">${totalRemainingBalanceOverall.toLocaleString()}</span>
+                  </div>
+                  <span className="inline-flex items-center gap-1 text-[9px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider">
+                    ⏰ Remainder
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
-          <p className="text-[10px] text-gray-400 mt-3 font-semibold leading-none flex items-center gap-1">
-            <Sparkles className="w-3" /> Real-time saved registry
-          </p>
-          <div className="absolute top-2 right-2 p-1 bg-blue-50 text-brand-blue rounded-md"><Users className="w-4 h-4" /></div>
+
+          {/* Simple Ratio progress bar */}
+          <div className="mt-5 space-y-1.5">
+            <div className="flex justify-between items-center text-[9px] text-slate-400 font-semibold uppercase tracking-wider">
+              <span>Deposit vs Balance Ratio</span>
+              <span>
+                {totalRevenue > 0 ? Math.round((totalDepositDueOverall / totalRevenue) * 100) : 0}% Deposits
+              </span>
+            </div>
+            <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden flex border border-slate-800">
+              <div 
+                className="bg-brand-blue-light h-full rounded-full" 
+                style={{ width: `${totalRevenue > 0 ? (totalDepositDueOverall / totalRevenue) * 105 : 0}%` }}
+              />
+              <div 
+                className="bg-amber-500 h-full rounded-full" 
+                style={{ width: `${totalRevenue > 0 ? (totalRemainingBalanceOverall / totalRevenue) * 105 : 0}%` }}
+              />
+            </div>
+          </div>
         </div>
 
-        {/* Card 2: Total Owed (Overall Value) */}
-        <div className="bg-white border border-gray-200 p-4 rounded-2xl flex flex-col justify-between shadow-2xs relative overflow-hidden">
-          <div>
-            <span className="text-[10px] uppercase font-black text-gray-400 tracking-wider block">Total Projected</span>
-            <span className="font-mono text-2xl font-black text-slate-800 block mt-1">${totalRevenue}</span>
+        {/* Card 2: Intake Submission Registry */}
+        <div className="lg:col-span-5 md:col-span-12 bg-white border border-gray-200 p-6 rounded-2xl flex flex-col justify-between shadow-2xs relative overflow-hidden">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="flex p-1.5 bg-blue-50 border border-blue-105 text-brand-blue rounded-md">
+                  <Users className="w-4 h-4" />
+                </span>
+                <div>
+                  <span className="text-[10px] uppercase font-black text-gray-400 tracking-wider block">Intake Submissions</span>
+                  <span className="text-[9px] text-slate-400 font-semibold block font-sans">Registered brothers online</span>
+                </div>
+              </div>
+              <div className="inline-flex items-center gap-1 text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span>Live Sync</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <span className="text-[9px] text-gray-450 uppercase font-black tracking-wider block">Registered Count</span>
+                <span className="font-mono text-3.5xl font-black text-slate-900 block">{totalEntries}</span>
+                <span className="text-[10px] text-slate-405 font-bold block">Grand cohort size</span>
+              </div>
+              <div className="space-y-1 border-l border-gray-100 pl-4">
+                <span className="text-[9px] text-gray-450 uppercase font-black tracking-wider block">Avg Ticket Cost</span>
+                <span className="font-mono text-3.5xl font-black text-slate-800 block">
+                  ${totalEntries > 0 ? Math.round(totalRevenue / totalEntries) : 0}
+                </span>
+                <span className="text-[10px] text-slate-405 font-bold block">Value per brother</span>
+              </div>
+            </div>
           </div>
-          <p className="text-[10px] text-slate-400 mt-3 font-semibold leading-none">
-            Checkout Grand Total
+
+          <p className="text-[10px] text-gray-500 font-semibold mt-5 flex items-center justify-center gap-1.5 bg-slate-50 p-2 border border-gray-100 rounded-lg text-center leading-normal">
+            <Sparkles className="w-3.5 h-3.5 text-yellow-500" />
+            <span>Fully active saved and validated database registry</span>
           </p>
-          <div className="absolute top-2 right-2 p-1 bg-gray-100 text-slate-600 rounded-md"><CreditCard className="w-4 h-4" /></div>
         </div>
 
-        {/* Card 3: Deposits Owed by July 19 */}
-        <div className="bg-blue-50/50 border border-blue-200 p-4 rounded-2xl flex flex-col justify-between shadow-2xs relative overflow-hidden">
-          <div>
-            <span className="text-[10px] uppercase font-black text-brand-blue tracking-wider block">Due 7/19 (Deposits)</span>
-            <span className="font-mono text-2xl font-black text-brand-blue block mt-1">${totalDepositDueOverall}</span>
+        {/* Card 3: Custom Chapter Apparel Ordered */}
+        <div className="lg:col-span-6 md:col-span-6 bg-gradient-to-tr from-indigo-50/50 to-purple-50/20 border border-indigo-100 p-6 rounded-2xl flex flex-col justify-between shadow-xs relative overflow-hidden">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between border-b border-indigo-100/60 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="flex p-1.5 bg-indigo-100/60 border border-indigo-150 text-indigo-700 rounded-md">
+                  <ShoppingBag className="w-4 h-4" />
+                </span>
+                <div>
+                  <span className="text-[10px] uppercase font-black text-indigo-800 tracking-wider block">Custom Jackets</span>
+                  <span className="text-[9px] text-indigo-500 font-bold block">Carhartt Style Custom Line Wear</span>
+                </div>
+              </div>
+              <span className="text-[9px] bg-indigo-100 text-indigo-700 border border-indigo-155 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                Apparel Desk
+              </span>
+            </div>
+
+            <div className="flex items-baseline gap-2">
+              <span className="font-mono text-4xl font-black text-indigo-900 leading-none">{totalJacketOrders}</span>
+              <span className="text-xs font-black text-indigo-550 uppercase">Carhartt Jacket Orders</span>
+            </div>
+
+            <p className="text-[10.5px] text-indigo-700 font-bold leading-relaxed">
+              👉 {Math.round((totalJacketOrders / (totalEntries || 1)) * 100)}% of registered brothers ordered a customizable Heavyweight Chapter jacket!
+            </p>
           </div>
-          <p className="text-[10px] text-blue-700/80 mt-3 font-bold leading-none">
-            🟢 Initial installment target
-          </p>
-          <div className="absolute top-2 right-2 p-1 bg-blue-105 text-brand-blue rounded-md"><Calendar className="w-4 h-4" /></div>
+
+          <div className="mt-5 pt-3.5 border-t border-indigo-100/60 text-[10px] text-indigo-500 font-bold flex items-center justify-between">
+            <span>Size selections recorded in spreadsheet</span>
+            <span className="bg-indigo-100/50 text-indigo-700 px-1.5 py-0.5 rounded-sm font-mono font-semibold">$135 Unit Cost</span>
+          </div>
         </div>
 
-        {/* Card 4: Remaining Balance Owed by Sept 4 */}
-        <div className="bg-amber-50/60 border border-amber-250 p-4 rounded-2xl flex flex-col justify-between shadow-2xs relative overflow-hidden">
-          <div>
-            <span className="text-[10px] uppercase font-black text-amber-800 tracking-wider block">Due 9/4 (Balances)</span>
-            <span className="font-mono text-2xl font-black text-amber-700 block mt-1">${totalRemainingBalanceOverall}</span>
-          </div>
-          <p className="text-[10px] text-amber-800/80 mt-3 font-bold leading-none">
-            ⏰ Outstanding target
-          </p>
-          <div className="absolute top-2 right-2 p-1 bg-amber-100 text-amber-700 rounded-md"><Calendar className="w-4 h-4" /></div>
-        </div>
+        {/* Card 4: Game RSVP & Attendance Block */}
+        <div className="lg:col-span-6 md:col-span-6 bg-gradient-to-tr from-amber-50/50 to-orange-50/20 border border-amber-200 p-6 rounded-2xl flex flex-col justify-between shadow-xs relative overflow-hidden">
+          <div className="space-y-4">
+            <div className="flex items-center justify-between border-b border-amber-100/65 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="flex p-1.5 bg-amber-100 border border-amber-155 text-amber-700 rounded-md">
+                  <Ticket className="w-4 h-4" />
+                </span>
+                <div>
+                  <span className="text-[10px] uppercase font-black text-amber-800 tracking-wider block">Stadium Block RSVPs</span>
+                  <span className="text-[9px] text-amber-600 font-bold block">Coastal Carolina Football Tickets</span>
+                </div>
+              </div>
+              <span className="text-[9px] bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                Stadium RSVPs
+              </span>
+            </div>
 
-        {/* Card 5: Jackets */}
-        <div className="bg-white border border-gray-200 p-4 rounded-2xl flex flex-col justify-between shadow-2xs relative overflow-hidden">
-          <div>
-            <span className="text-[10px] uppercase font-black text-gray-400 tracking-wider block">Custom Jackets</span>
-            <span className="font-mono text-2xl font-black text-indigo-600 block mt-1">{totalJacketOrders} Orders</span>
-          </div>
-          <p className="text-[10px] text-slate-500 mt-3 font-semibold leading-none">
-            {Math.round((totalJacketOrders / (totalEntries || 1)) * 100)}% custom order
-          </p>
-          <div className="absolute top-2 right-2 p-1 bg-indigo-50 text-indigo-600 rounded-md"><ShoppingBag className="w-4 h-4" /></div>
-        </div>
+            <div className="flex items-baseline gap-2">
+              <span className="font-mono text-4xl font-black text-amber-700 leading-none">{totalTicketsSold}</span>
+              <span className="text-xs font-black text-amber-800 uppercase">Game Tickets</span>
+            </div>
 
-        {/* Card 6: Game RSVPs */}
-        <div className="bg-white border border-gray-200 p-4 rounded-2xl flex flex-col justify-between shadow-2xs relative overflow-hidden">
-          <div>
-            <span className="text-[10px] uppercase font-black text-gray-400 tracking-wider block">Game RSVPs</span>
-            <span className="font-mono text-2xl font-black text-amber-600 block mt-1">{totalTicketsSold} RSVPs</span>
+            <p className="text-[10.5px] text-amber-800/80 font-bold leading-relaxed">
+              🏟️ Brothers purchase their own stadium tickets with full choice and flexibility to sit wherever they prefer!
+            </p>
           </div>
-          <p className="text-[10px] text-slate-500 mt-3 font-semibold leading-none">
-            Game interest block
-          </p>
-          <div className="absolute top-2 right-2 p-1 bg-amber-50 text-amber-600 rounded-md"><Ticket className="w-4 h-4" /></div>
+
+          <div className="mt-4 pt-3.5 border-t border-amber-100/60 text-[10px] text-amber-600 font-mono font-semibold flex items-center justify-between">
+            <span>External checkout references logged</span>
+            <span className="bg-amber-100/50 text-amber-700 px-1.5 py-0.5 rounded-sm font-sans font-bold uppercase text-[9px]">Stadium Section</span>
+          </div>
         </div>
       </div>
 

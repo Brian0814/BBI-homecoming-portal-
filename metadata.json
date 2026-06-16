@@ -1,5 +1,5 @@
 {
-  "name": "Homecoming Package Portal",
+  "name": "Beta Beta Iota Homecoming Portal",
   "description": "Custom package ordering system for BBI chapter of Phi Beta Sigma.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

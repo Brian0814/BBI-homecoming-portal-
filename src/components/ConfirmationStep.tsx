@@ -429,7 +429,7 @@ export default function ConfirmationStep({
         <br />
         Phi Beta Sigma Fraternity, Inc. • Est. 2004
         <br />
-        <span className="font-mono text-[10px]">Homecoming 2026 Portal • Brotherhood • Scholarship • Service</span>
+        <span className="font-mono text-[10px]">Beta Beta Iota Homecoming Portal • Brotherhood • Scholarship • Service</span>
       </div>
     </div>
   );

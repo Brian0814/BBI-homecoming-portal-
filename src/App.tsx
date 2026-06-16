@@ -363,11 +363,11 @@ export default function App() {
               <span className="text-[10px] text-brand-blue-light font-black tracking-widest uppercase block">
                 PHI BETA SIGMA FRATERNITY, INC.
               </span>
-              <span className="text-slate-400 text-[9px] font-bold uppercase tracking-wider block">
-                Beta Beta Iota Chapter • Est. 2004
+              <span className="text-slate-400 text-[9.5px] font-bold uppercase tracking-wider block">
+                Beta Beta Iota Chapter • Coastal Carolina University • Est. 2004
               </span>
               <h2 className="font-display text-xl sm:text-2xl font-black uppercase tracking-tight text-white leading-tight">
-                Homecoming 2026 Package Portal
+                Beta Beta Iota Homecoming Portal
               </h2>
               <p className="text-[11px] text-slate-400 font-semibold max-w-xs mx-auto leading-relaxed">
                 Welcome, Brothers! Please enter the secure chapter password to unlock packages and register.
@@ -450,7 +450,7 @@ export default function App() {
                   BBI Chapter • Est. 2004
                 </span>
                 <h1 className="font-display text-2xl sm:text-3.5xl font-black uppercase tracking-tight text-white leading-tight">
-                  Homecoming 2026 Package Portal
+                  Beta Beta Iota Homecoming Portal
                 </h1>
                 <p className="text-xs sm:text-sm text-blue-100 font-semibold">
                   November 5-8, 2026 • Conway, SC • Coastal Carolina University
