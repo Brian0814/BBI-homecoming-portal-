@@ -142,9 +142,9 @@ export default function AdminPortal({
   useEffect(() => {
     try {
       const savedHistory = localStorage.getItem("bbi_homecoming_2026_history");
-      if (savedHistory) {
+      if (savedHistory !== null) {
         const parsed = JSON.parse(savedHistory);
-        if (parsed && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           setHistory(parsed);
           return;
         }
