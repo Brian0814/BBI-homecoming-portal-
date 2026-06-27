@@ -26,7 +26,8 @@ const resolvedConfig = {
   measurementId: env.VITE_FIREBASE_MEASUREMENT_ID || firebaseConfig.measurementId || ""
 };
 
-const databaseId = env.VITE_FIREBASE_DATABASE_ID || firebaseConfig.firestoreDatabaseId;
+const isUsingCustomProject = env.VITE_FIREBASE_PROJECT_ID && env.VITE_FIREBASE_PROJECT_ID !== firebaseConfig.projectId;
+const databaseId = env.VITE_FIREBASE_DATABASE_ID || (isUsingCustomProject ? "(default)" : firebaseConfig.firestoreDatabaseId);
 
 // Initialize Firebase
 const app = initializeApp(resolvedConfig);
