@@ -11,6 +11,8 @@ import {
   MapPin, Phone, Mail, FileText, ArrowLeft, Ticket, ShoppingBag, Eye, Calendar, X
 } from "lucide-react";
 import { getPaymentMilestones } from "../lib/paymentUtils";
+import { db, handleFirestoreError, OperationType } from "../lib/firebase";
+import { collection, query, onSnapshot, doc, setDoc, deleteDoc } from "firebase/firestore";
 
 interface HistoryEntry {
   ref: string;
@@ -138,28 +140,36 @@ export default function AdminPortal({
   const [selectedAttendee, setSelectedAttendee] = useState<HistoryEntry | null>(null);
   const [deleteConfirmRef, setDeleteConfirmRef] = useState<string | null>(null);
 
-  // Load history from localStorage or seed mock records if empty
+  // Load history from Firestore with real-time sync across devices
   useEffect(() => {
-    try {
-      const savedHistory = localStorage.getItem("bbi_homecoming_2026_history");
-      if (savedHistory !== null) {
-        const parsed = JSON.parse(savedHistory);
-        if (Array.isArray(parsed)) {
-          setHistory(parsed);
-          return;
-        }
+    const q = query(collection(db, "registrations"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data: HistoryEntry[] = [];
+      snapshot.forEach((docSnap) => {
+        data.push(docSnap.data() as HistoryEntry);
+      });
+      
+      if (data.length === 0) {
+        // First-time load: populate Firestore with our seed mock data so the registry is ready
+        SEED_MOCK_DATA.forEach(async (entry) => {
+          try {
+            await setDoc(doc(db, "registrations", entry.ref), entry);
+          } catch (err) {
+            console.error("Failed to seed record:", err);
+          }
+        });
+        setHistory(SEED_MOCK_DATA);
+      } else {
+        // Order by date descending
+        const sorted = [...data].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setHistory(sorted);
       }
-    } catch (e) {
-      console.warn("Could not load order history, using mock data:", e);
-    }
-    
-    // Fallback to storing seed mock data
-    setHistory(SEED_MOCK_DATA);
-    try {
-      localStorage.setItem("bbi_homecoming_2026_history", JSON.stringify(SEED_MOCK_DATA));
-    } catch (e) {
-      console.error(e);
-    }
+    }, (error) => {
+      console.error("Firestore onSnapshot error:", error);
+      handleFirestoreError(error, OperationType.LIST, "registrations");
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const calculateGrandTotal = (formData: OrderForm) => {
@@ -964,16 +974,27 @@ export default function AdminPortal({
                 >
                   Cancel
                 </button>
-                <button
+                 <button
                   type="button"
-                  onClick={() => {
-                    const updated = history.filter((x) => x.ref !== deleteConfirmRef);
-                    setHistory(updated);
-                    try {
-                      localStorage.setItem("bbi_homecoming_2026_history", JSON.stringify(updated));
-                    } catch (e) {
-                      console.error(e);
+                  onClick={async () => {
+                    if (deleteConfirmRef) {
+                      try {
+                        // Delete document from Firestore
+                        await deleteDoc(doc(db, "registrations", deleteConfirmRef));
+                      } catch (error) {
+                        console.error("Failed to delete registration from Firestore:", error);
+                        handleFirestoreError(error, OperationType.DELETE, `registrations/${deleteConfirmRef}`);
+                      }
+
+                      // Update local storage fallback as well
+                      try {
+                        const updated = history.filter((x) => x.ref !== deleteConfirmRef);
+                        localStorage.setItem("bbi_homecoming_2026_history", JSON.stringify(updated));
+                      } catch (e) {
+                        console.error("Failed to update local storage on delete:", e);
+                      }
                     }
+
                     if (selectedAttendee?.ref === deleteConfirmRef) {
                       setSelectedAttendee(null);
                     }

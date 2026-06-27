@@ -13,6 +13,8 @@ import ReviewStep from "./components/ReviewStep";
 import ConfirmationStep from "./components/ConfirmationStep";
 import AdminPortal from "./components/AdminPortal";
 import { ChevronLeft, ChevronRight, Check, PackageOpen, LayoutDashboard, ShoppingCart, Sparkles, Lock, Eye, EyeOff, AlertCircle, RotateCcw } from "lucide-react";
+import { db, handleFirestoreError, OperationType } from "./lib/firebase";
+import { doc, setDoc } from "firebase/firestore";
 
 const LOCAL_STORAGE_KEY = "bbi_homecoming_2026_order";
 const ORDER_HISTORY_KEY = "bbi_homecoming_2026_history";
@@ -292,14 +294,26 @@ export default function App() {
       setOrderRefNumber(refCode);
       setIsSubmitted(true);
 
-      // Persist submission state in history
+      const newEntry = {
+        ref: refCode,
+        date: new Date().toISOString(),
+        formData
+      };
+
+      // Persist submission state in Firestore in real-time
+      try {
+        setDoc(doc(db, "registrations", refCode), newEntry).catch((error) => {
+          console.error("Failed async setDoc to Firestore:", error);
+        });
+      } catch (e) {
+        console.error("Could not write order to Firestore:", e);
+        handleFirestoreError(e, OperationType.WRITE, `registrations/${refCode}`);
+      }
+
+      // Persist submission state in history as a local fallback
       try {
         const existingHistory = JSON.parse(localStorage.getItem(ORDER_HISTORY_KEY) || "[]");
-        existingHistory.push({
-          ref: refCode,
-          date: new Date().toISOString(),
-          formData
-        });
+        existingHistory.push(newEntry);
         localStorage.setItem(ORDER_HISTORY_KEY, JSON.stringify(existingHistory));
       } catch (e) {
         console.error("Could not write order history:", e);

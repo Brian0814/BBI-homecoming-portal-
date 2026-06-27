@@ -1,0 +1,65 @@
+{
+  "entities": {
+    "Registration": {
+      "title": "Registration",
+      "description": "A brother's registration for BBI Homecoming 2026 packages",
+      "type": "object",
+      "properties": {
+        "ref": {
+          "type": "string",
+          "description": "Unique registration referral reference code"
+        },
+        "date": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp when the registration was completed"
+        },
+        "formData": {
+          "type": "object",
+          "description": "The custom registration order form choices",
+          "properties": {
+            "fullName": { "type": "string" },
+            "email": { "type": "string" },
+            "phone": { "type": "string" },
+            "shippingAddress": {
+              "type": "object",
+              "properties": {
+                "street": { "type": "string" },
+                "city": { "type": "string" },
+                "state": { "type": "string" },
+                "zipCode": { "type": "string" }
+              },
+              "required": ["street", "city", "state", "zipCode"]
+            },
+            "shirtSize": { "type": "string" },
+            "specialRequests": { "type": "string" },
+            "selectedPackageId": { "type": "string" },
+            "addFootballTicket": { "type": "boolean" },
+            "addDetroitJacket": { "type": "boolean" },
+            "jacketSize": { "type": "string" },
+            "jacketCrossingYear": { "type": "string" },
+            "jacketLineName": { "type": "string" },
+            "jacketEntireLineName": { "type": "string" },
+            "jacketLineNumber": { "type": "string" }
+          },
+          "required": [
+            "fullName",
+            "email",
+            "phone",
+            "shirtSize",
+            "selectedPackageId",
+            "addFootballTicket",
+            "addDetroitJacket"
+          ]
+        }
+      },
+      "required": ["ref", "date", "formData"]
+    }
+  },
+  "firestore": {
+    "/registrations/{registrationId}": {
+      "schema": "Registration",
+      "description": "Collection of all brother packages registration submissions"
+    }
+  }
+}
