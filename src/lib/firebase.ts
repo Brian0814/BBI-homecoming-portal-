@@ -13,9 +13,24 @@ import {
 } from "firebase/firestore";
 import firebaseConfig from "../../firebase-applet-config.json";
 
+// Standardize configuration using environment variables if set (from the AI Studio settings),
+// otherwise gracefully fall back to the pre-provisioned JSON file.
+const env = (import.meta as any).env || {};
+const resolvedConfig = {
+  apiKey: env.VITE_FIREBASE_API_KEY || firebaseConfig.apiKey || "",
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfig.authDomain || "",
+  projectId: env.VITE_FIREBASE_PROJECT_ID || firebaseConfig.projectId || "",
+  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket || "",
+  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfig.messagingSenderId || "",
+  appId: env.VITE_FIREBASE_APP_ID || firebaseConfig.appId || "",
+  measurementId: env.VITE_FIREBASE_MEASUREMENT_ID || firebaseConfig.measurementId || ""
+};
+
+const databaseId = env.VITE_FIREBASE_DATABASE_ID || firebaseConfig.firestoreDatabaseId;
+
 // Initialize Firebase
-const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
+const app = initializeApp(resolvedConfig);
+export const db = getFirestore(app, databaseId); /* CRITICAL: The app will break without this line */
 export const auth = getAuth();
 
 // Operation Types as defined in guidelines

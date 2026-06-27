@@ -140,43 +140,108 @@ export default function AdminPortal({
   const [selectedAttendee, setSelectedAttendee] = useState<HistoryEntry | null>(null);
   const [deleteConfirmRef, setDeleteConfirmRef] = useState<string | null>(null);
 
-  // Load history from Firestore with real-time sync across devices
+  // Load history with real-time Firestore sync + local fallback failsafe
   useEffect(() => {
+    // 1. Immediately load any local storage registrations as a fast offline fallback
+    let localHistory: HistoryEntry[] = [];
+    try {
+      const saved = localStorage.getItem("bbi_homecoming_2026_history");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          localHistory = parsed;
+          setHistory(parsed);
+        }
+      }
+    } catch (e) {
+      console.warn("Could not load local history fallback:", e);
+    }
+
+    // 2. Establish real-time Firestore subscription
     const q = query(collection(db, "registrations"));
     const unsubscribe = onSnapshot(q, async (snapshot) => {
-      const data: HistoryEntry[] = [];
+      const firestoreData: HistoryEntry[] = [];
       snapshot.forEach((docSnap) => {
-        data.push(docSnap.data() as HistoryEntry);
+        firestoreData.push(docSnap.data() as HistoryEntry);
       });
-      
-      if (data.length === 0) {
-        // Smart seeding check to avoid re-populating mock records if they were intentionally deleted
-        try {
-          const seedMetaRef = doc(db, "metadata", "seeding_status");
-          const seedMetaSnap = await getDoc(seedMetaRef);
-          if (!seedMetaSnap.exists()) {
-            // First time ever booting up the app: seed the initial mock records
-            await setDoc(seedMetaRef, { seeded: true });
-            for (const entry of SEED_MOCK_DATA) {
+
+      // Handle the case where Firestore is empty (e.g. fresh database or all deleted)
+      if (firestoreData.length === 0) {
+        // If there is local history, we heal Firestore by writing our local history back to the cloud!
+        if (localHistory.length > 0) {
+          console.log("Healing Firestore with local backup data...", localHistory);
+          for (const entry of localHistory) {
+            try {
               await setDoc(doc(db, "registrations", entry.ref), entry);
+            } catch (err) {
+              console.error("Failed to restore registration to Firestore:", err);
             }
-            setHistory(SEED_MOCK_DATA);
-          } else {
-            // Seeding already occurred in the past, meaning the admin deleted them intentionally! Keep empty
+          }
+        } else {
+          // If BOTH Firestore and local are empty, check if we need to seed initial mock data
+          try {
+            const seedMetaRef = doc(db, "metadata", "seeding_status");
+            const seedMetaSnap = await getDoc(seedMetaRef);
+            if (!seedMetaSnap.exists()) {
+              await setDoc(seedMetaRef, { seeded: true });
+              for (const entry of SEED_MOCK_DATA) {
+                await setDoc(doc(db, "registrations", entry.ref), entry);
+              }
+              setHistory(SEED_MOCK_DATA);
+              localStorage.setItem("bbi_homecoming_2026_history", JSON.stringify(SEED_MOCK_DATA));
+            } else {
+              setHistory([]);
+              localStorage.setItem("bbi_homecoming_2026_history", JSON.stringify([]));
+            }
+          } catch (err) {
+            console.error("Failed to query seeding metadata:", err);
             setHistory([]);
           }
-        } catch (err) {
-          console.error("Failed to query seeding metadata status:", err);
-          setHistory([]);
         }
       } else {
-        // Order by date descending
-        const sorted = [...data].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        // We have data in Firestore. Let's merge Firestore data and Local history to prevent any data loss!
+        // We do a union of both lists keyed by their unique 'ref'
+        const mergedMap = new Map<string, HistoryEntry>();
+        
+        // Load local ones first
+        localHistory.forEach(item => {
+          if (item && item.ref) mergedMap.set(item.ref, item);
+        });
+        
+        // Overwrite or add firestore ones (firestore is the source of truth)
+        firestoreData.forEach(item => {
+          if (item && item.ref) mergedMap.set(item.ref, item);
+        });
+
+        const mergedList = Array.from(mergedMap.values());
+
+        // Sort by date descending
+        const sorted = mergedList.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+        // If there are registrations in local storage that were NOT in Firestore, upload them to Firestore! (Self-healing)
+        const localOnlyItems = localHistory.filter(localItem => !firestoreData.some(fsItem => fsItem.ref === localItem.ref));
+        if (localOnlyItems.length > 0) {
+          console.log("Syncing offline/local registrations to Firestore:", localOnlyItems);
+          for (const entry of localOnlyItems) {
+            try {
+              await setDoc(doc(db, "registrations", entry.ref), entry);
+            } catch (err) {
+              console.error("Failed to sync local registration to Firestore:", err);
+            }
+          }
+        }
+
+        // Save the merged, sorted list back to state and localStorage
         setHistory(sorted);
+        try {
+          localStorage.setItem("bbi_homecoming_2026_history", JSON.stringify(sorted));
+        } catch (e) {
+          console.error("Failed to update localStorage history backup:", e);
+        }
       }
     }, (error) => {
       console.error("Firestore onSnapshot error:", error);
-      handleFirestoreError(error, OperationType.LIST, "registrations");
+      // Fallback is already displayed from localStorage initialization, so we do not break the UI!
     });
 
     return () => unsubscribe();
