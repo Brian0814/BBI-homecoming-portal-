@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { getPaymentMilestones } from "../lib/paymentUtils";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
-import { collection, query, onSnapshot, doc, setDoc, deleteDoc } from "firebase/firestore";
+import { collection, query, onSnapshot, doc, setDoc, deleteDoc, getDoc } from "firebase/firestore";
 
 interface HistoryEntry {
   ref: string;
@@ -143,22 +143,32 @@ export default function AdminPortal({
   // Load history from Firestore with real-time sync across devices
   useEffect(() => {
     const q = query(collection(db, "registrations"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
       const data: HistoryEntry[] = [];
       snapshot.forEach((docSnap) => {
         data.push(docSnap.data() as HistoryEntry);
       });
       
       if (data.length === 0) {
-        // First-time load: populate Firestore with our seed mock data so the registry is ready
-        SEED_MOCK_DATA.forEach(async (entry) => {
-          try {
-            await setDoc(doc(db, "registrations", entry.ref), entry);
-          } catch (err) {
-            console.error("Failed to seed record:", err);
+        // Smart seeding check to avoid re-populating mock records if they were intentionally deleted
+        try {
+          const seedMetaRef = doc(db, "metadata", "seeding_status");
+          const seedMetaSnap = await getDoc(seedMetaRef);
+          if (!seedMetaSnap.exists()) {
+            // First time ever booting up the app: seed the initial mock records
+            await setDoc(seedMetaRef, { seeded: true });
+            for (const entry of SEED_MOCK_DATA) {
+              await setDoc(doc(db, "registrations", entry.ref), entry);
+            }
+            setHistory(SEED_MOCK_DATA);
+          } else {
+            // Seeding already occurred in the past, meaning the admin deleted them intentionally! Keep empty
+            setHistory([]);
           }
-        });
-        setHistory(SEED_MOCK_DATA);
+        } catch (err) {
+          console.error("Failed to query seeding metadata status:", err);
+          setHistory([]);
+        }
       } else {
         // Order by date descending
         const sorted = [...data].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());

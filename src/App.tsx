@@ -107,6 +107,7 @@ export default function App() {
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
   const [orderRefNumber, setOrderRefNumber] = useState<string>("");
   const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // Clear any existing legacy local storage drafts on mount to guarantee starting completely fresh
   useEffect(() => {
@@ -270,8 +271,9 @@ export default function App() {
     }
   };
 
-  const handleOrderSubmit = (e: React.FormEvent) => {
+  const handleOrderSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
 
     // Verify all steps are fully valid before generating confirmation
     let isAllValid = true;
@@ -284,6 +286,7 @@ export default function App() {
     }
 
     if (isAllValid) {
+      setIsSubmitting(true);
       // Generate order reference number
       const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
       let randomPart = "";
@@ -291,8 +294,6 @@ export default function App() {
         randomPart += characters.charAt(Math.floor(Math.random() * characters.length));
       }
       const refCode = `BBI-HMC26-${randomPart}`;
-      setOrderRefNumber(refCode);
-      setIsSubmitted(true);
 
       const newEntry = {
         ref: refCode,
@@ -302,12 +303,9 @@ export default function App() {
 
       // Persist submission state in Firestore in real-time
       try {
-        setDoc(doc(db, "registrations", refCode), newEntry).catch((error) => {
-          console.error("Failed async setDoc to Firestore:", error);
-        });
+        await setDoc(doc(db, "registrations", refCode), newEntry);
       } catch (e) {
         console.error("Could not write order to Firestore:", e);
-        handleFirestoreError(e, OperationType.WRITE, `registrations/${refCode}`);
       }
 
       // Persist submission state in history as a local fallback
@@ -318,6 +316,10 @@ export default function App() {
       } catch (e) {
         console.error("Could not write order history:", e);
       }
+
+      setOrderRefNumber(refCode);
+      setIsSubmitted(true);
+      setIsSubmitting(false);
 
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -791,10 +793,24 @@ export default function App() {
                   ) : (
                     <button
                       type="submit"
-                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-10 py-3.5 rounded-xl bg-brand-blue text-white font-extrabold text-sm shadow-md hover:bg-brand-blue-dark hover:shadow-lg transition-all cursor-pointer min-h-[48px] touch-manipulation"
+                      disabled={isSubmitting}
+                      className={`w-full sm:w-auto inline-flex items-center justify-center gap-2 px-10 py-3.5 rounded-xl text-white font-extrabold text-sm shadow-md transition-all cursor-pointer min-h-[48px] touch-manipulation ${
+                        isSubmitting
+                          ? "bg-slate-400 cursor-not-allowed opacity-80"
+                          : "bg-brand-blue hover:bg-brand-blue-dark hover:shadow-lg"
+                      }`}
                     >
-                      <Check className="w-5 h-5 stroke-[3]" />
-                      Submit Package Order (${finalPrice})
+                      {isSubmitting ? (
+                        <>
+                          <div className="w-5 h-5 border-3 border-white border-t-transparent rounded-full animate-spin" />
+                          Submitting Order...
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-5 h-5 stroke-[3]" />
+                          Submit Package Order (${finalPrice})
+                        </>
+                      )}
                     </button>
                   )}
                 </div>
