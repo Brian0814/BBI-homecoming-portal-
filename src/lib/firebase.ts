@@ -15,19 +15,35 @@ import firebaseConfig from "../../firebase-applet-config.json";
 
 // Standardize configuration using environment variables if set (from the AI Studio settings),
 // otherwise gracefully fall back to the pre-provisioned JSON file.
-const env = (import.meta as any).env || {};
+// @ts-ignore
+const envApiKey = import.meta.env?.VITE_FIREBASE_API_KEY;
+// @ts-ignore
+const envAuthDomain = import.meta.env?.VITE_FIREBASE_AUTH_DOMAIN;
+// @ts-ignore
+const envProjectId = import.meta.env?.VITE_FIREBASE_PROJECT_ID;
+// @ts-ignore
+const envStorageBucket = import.meta.env?.VITE_FIREBASE_STORAGE_BUCKET;
+// @ts-ignore
+const envMessagingSenderId = import.meta.env?.VITE_FIREBASE_MESSAGING_SENDER_ID;
+// @ts-ignore
+const envAppId = import.meta.env?.VITE_FIREBASE_APP_ID;
+// @ts-ignore
+const envMeasurementId = import.meta.env?.VITE_FIREBASE_MEASUREMENT_ID;
+// @ts-ignore
+const envDatabaseId = import.meta.env?.VITE_FIREBASE_DATABASE_ID;
+
 const resolvedConfig = {
-  apiKey: env.VITE_FIREBASE_API_KEY || firebaseConfig.apiKey || "",
-  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN || firebaseConfig.authDomain || "",
-  projectId: env.VITE_FIREBASE_PROJECT_ID || firebaseConfig.projectId || "",
-  storageBucket: env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket || "",
-  messagingSenderId: env.VITE_FIREBASE_MESSAGING_SENDER_ID || firebaseConfig.messagingSenderId || "",
-  appId: env.VITE_FIREBASE_APP_ID || firebaseConfig.appId || "",
-  measurementId: env.VITE_FIREBASE_MEASUREMENT_ID || firebaseConfig.measurementId || ""
+  apiKey: envApiKey || firebaseConfig.apiKey || "",
+  authDomain: envAuthDomain || firebaseConfig.authDomain || "",
+  projectId: envProjectId || firebaseConfig.projectId || "",
+  storageBucket: envStorageBucket || firebaseConfig.storageBucket || "",
+  messagingSenderId: envMessagingSenderId || firebaseConfig.messagingSenderId || "",
+  appId: envAppId || firebaseConfig.appId || "",
+  measurementId: envMeasurementId || firebaseConfig.measurementId || ""
 };
 
-const isUsingCustomProject = env.VITE_FIREBASE_PROJECT_ID && env.VITE_FIREBASE_PROJECT_ID !== firebaseConfig.projectId;
-const databaseId = env.VITE_FIREBASE_DATABASE_ID || (isUsingCustomProject ? "(default)" : firebaseConfig.firestoreDatabaseId);
+const isUsingCustomProject = envProjectId && envProjectId !== firebaseConfig.projectId;
+const databaseId = envDatabaseId || (isUsingCustomProject ? "(default)" : firebaseConfig.firestoreDatabaseId);
 
 // Initialize Firebase
 const app = initializeApp(resolvedConfig);
