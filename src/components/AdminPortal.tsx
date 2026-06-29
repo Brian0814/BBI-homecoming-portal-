@@ -8,7 +8,8 @@ import { OrderForm, PACKAGE_OPTIONS } from "../types";
 import { 
   Users, Trash2, Search, Download, Printer, ArrowUpDown, ChevronDown, 
   Layers, CreditCard, Sparkles, Filter, MoreHorizontal, ShoppingCart, 
-  MapPin, Phone, Mail, FileText, ArrowLeft, Ticket, ShoppingBag, Eye, Calendar, X
+  MapPin, Phone, Mail, FileText, ArrowLeft, Ticket, ShoppingBag, Eye, Calendar, X,
+  Send, Copy, Check
 } from "lucide-react";
 import { getPaymentMilestones } from "../lib/paymentUtils";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
@@ -139,6 +140,7 @@ export default function AdminPortal({
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [selectedAttendee, setSelectedAttendee] = useState<HistoryEntry | null>(null);
   const [deleteConfirmRef, setDeleteConfirmRef] = useState<string | null>(null);
+  const [copiedRef, setCopiedRef] = useState<string | null>(null);
 
   // Load history with real-time Firestore sync + local fallback failsafe
   useEffect(() => {
@@ -225,6 +227,78 @@ export default function AdminPortal({
     const balanceDue = total - depositDue;
 
     return { total, depositDue, balanceDue };
+  };
+
+  const generateProfileText = (attendee: HistoryEntry) => {
+    const { total } = calculateDepositAndBalance(attendee.formData);
+    const pkg = PACKAGE_OPTIONS.find((p) => p.id === attendee.formData.selectedPackageId);
+    const packageName = pkg ? pkg.name : "Unknown Package";
+    const milestones = getPaymentMilestones(attendee.formData.selectedPackageId, attendee.formData.addDetroitJacket);
+
+    const milestoneLines = milestones
+      .map(
+        (m) =>
+          `  • ${m.date} Milestone: $${m.amount} (${m.amount > 0 ? "Installment Scheduled" : "Fully cleared • No installment"})`
+      )
+      .join("\n");
+
+    let jacketSection = "";
+    if (attendee.formData.addDetroitJacket) {
+      jacketSection = `\n\n[JACKET LINE EMBROIDERY & SIZING]
+  • Jacket Size: ${attendee.formData.jacketSize || "N/A"}
+  • Crossing Year: ${attendee.formData.jacketCrossingYear || "N/A"}
+  • Line Name: "${attendee.formData.jacketLineName || ""}"
+  • Entire Line Name: "${attendee.formData.jacketEntireLineName || ""}"
+  • Line Number: ${attendee.formData.jacketLineNumber || "N/A"}`;
+    }
+
+    return `Dear Brother ${attendee.formData.fullName.trim()},
+
+We have successfully processed your registration record for BBI Homecoming 2026. Here is a copy of your verified attendee profile sheet:
+
+--------------------------------------------------
+REGISTRANT PROFILE SHEET
+--------------------------------------------------
+Reference ID: ${attendee.ref}
+Registered On: ${new Date(attendee.date).toLocaleDateString()} at ${new Date(attendee.date).toLocaleTimeString()}
+
+[CONTACT INFORMATION]
+  • Full Name: ${attendee.formData.fullName}
+  • Email: ${attendee.formData.email}
+  • Phone: ${attendee.formData.phone}
+
+[PACKAGE & TREASURY INFORMATION]
+  • Selected Package: ${packageName}
+  • Total Registered Cost: $${total}
+
+[TREASURY PAYMENT MILESTONES]
+${milestoneLines}
+
+[MAILING COORDINATES]
+  • Street: ${attendee.formData.shippingAddress.street}
+  • City/State/Zip: ${attendee.formData.shippingAddress.city}, ${attendee.formData.shippingAddress.state} ${attendee.formData.shippingAddress.zipCode}
+
+[CLOTHING SIZING]
+  • Core Shirt Size: ${attendee.formData.shirtSize}${jacketSection}
+
+[COMMITTEE NOTES / WISHES]
+  • Special Requests: ${attendee.formData.specialRequests || "None provided"}
+
+--------------------------------------------------
+If any details need adjustment, please let us know immediately. Looking forward to welcoming you home!
+
+Best regards,
+BBI Homecoming Committee`;
+  };
+
+  const handleCopyProfileText = (attendee: HistoryEntry) => {
+    const text = generateProfileText(attendee);
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedRef(attendee.ref);
+      setTimeout(() => setCopiedRef(null), 3000);
+    }).catch((err) => {
+      console.error("Failed to copy profile sheet text:", err);
+    });
   };
 
   // Delete handler
@@ -788,60 +862,111 @@ export default function AdminPortal({
       </div>
 
       {/* Slide-over Profile Detail Sheet (Opens from the right to allow the list to be fully expanded) */}
-      {selectedAttendee && (
-        <div className="fixed inset-0 z-55 overflow-hidden" aria-labelledby="slide-over-title" role="dialog" aria-modal="true" id="registrant-slideover-container">
-          <div className="absolute inset-0 overflow-hidden">
-            {/* Dark back-blur panel overlay */}
-            <div 
-              className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity duration-300 animate-in fade-in" 
-              onClick={() => setSelectedAttendee(null)}
-              aria-hidden="true"
-            />
+      {selectedAttendee && (() => {
+        const subject = `BBI Homecoming 2026: Registrant Profile Sheet (${selectedAttendee.formData.fullName})`;
+        const emailBody = generateProfileText(selectedAttendee);
+        const recipientEmail = selectedAttendee.formData.email;
 
-            <div className="fixed inset-y-0 right-0 pl-10 max-w-full flex">
-              <div className="w-screen max-w-md bg-white shadow-2xl flex flex-col border-l border-slate-250 animate-in slide-in-from-right duration-300 ease-out" id="registrant-detail-sidebar">
-                
-                {/* Header Panel */}
-                <div className="bg-slate-950 font-display font-black text-xs uppercase tracking-widest text-brand-blue-light p-4.5 flex items-center justify-between border-b border-slate-850">
-                  <div className="flex items-center gap-2">
-                    <span className="bg-brand-blue text-white px-2.5 py-0.5 rounded-sm font-mono text-[10px] tracking-wide">
-                      {selectedAttendee.ref}
-                    </span>
-                    <span>Registrant Profile Detail</span>
-                  </div>
-                  <button 
-                    type="button" 
-                    onClick={() => setSelectedAttendee(null)}
-                    className="text-slate-450 hover:text-white transition-colors cursor-pointer p-1.5 rounded-lg hover:bg-slate-800 flex items-center justify-center border border-transparent hover:border-slate-700"
-                    title="Close Details Overview"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
+        const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(recipientEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(emailBody)}`;
+        const mailtoUrl = `mailto:${encodeURIComponent(recipientEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(emailBody)}`;
 
-                {/* Content body panel */}
-                <div className="flex-1 overflow-y-auto p-5 space-y-6 text-xs text-gray-700 font-sans">
-                  {/* Full Header Name */}
-                  <div className="space-y-1.5">
-                    <h4 className="font-display font-black text-gray-950 text-lg leading-snug">
-                      {selectedAttendee.formData.fullName}
-                    </h4>
-                    <p className="text-[10px] text-gray-400 font-medium flex items-center gap-1.5">
-                      <Calendar className="w-3.5 h-3.5 text-gray-400" /> Registered on: <span className="font-semibold text-slate-650">{new Date(selectedAttendee.date).toLocaleDateString()}</span> at <span className="font-mono text-slate-650">{new Date(selectedAttendee.date).toLocaleTimeString()}</span>
-                    </p>
+        return (
+          <div className="fixed inset-0 z-55 overflow-hidden" aria-labelledby="slide-over-title" role="dialog" aria-modal="true" id="registrant-slideover-container">
+            <div className="absolute inset-0 overflow-hidden">
+              {/* Dark back-blur panel overlay */}
+              <div 
+                className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity duration-300 animate-in fade-in" 
+                onClick={() => setSelectedAttendee(null)}
+                aria-hidden="true"
+              />
+
+              <div className="fixed inset-y-0 right-0 pl-10 max-w-full flex">
+                <div className="w-screen max-w-md bg-white shadow-2xl flex flex-col border-l border-slate-250 animate-in slide-in-from-right duration-300 ease-out" id="registrant-detail-sidebar">
+                  
+                  {/* Header Panel */}
+                  <div className="bg-slate-950 font-display font-black text-xs uppercase tracking-widest text-brand-blue-light p-4.5 flex items-center justify-between border-b border-slate-850">
+                    <div className="flex items-center gap-2">
+                      <span className="bg-brand-blue text-white px-2.5 py-0.5 rounded-sm font-mono text-[10px] tracking-wide">
+                        {selectedAttendee.ref}
+                      </span>
+                      <span>Registrant Profile Detail</span>
+                    </div>
+                    <button 
+                      type="button" 
+                      onClick={() => setSelectedAttendee(null)}
+                      className="text-slate-450 hover:text-white transition-colors cursor-pointer p-1.5 rounded-lg hover:bg-slate-800 flex items-center justify-center border border-transparent hover:border-slate-700"
+                      title="Close Details Overview"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   </div>
 
-                  {/* Contact Block Grid */}
-                  <div className="border-t border-gray-100 pt-4 space-y-2.5">
-                    <p className="flex items-center gap-2.5 font-medium text-slate-800">
-                      <Mail className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                      <span className="truncate hover:underline select-all">{selectedAttendee.formData.email}</span>
-                    </p>
-                    <p className="flex items-center gap-2.5 font-medium text-slate-800">
-                      <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                      <span className="select-all">{selectedAttendee.formData.phone}</span>
-                    </p>
-                  </div>
+                  {/* Content body panel */}
+                  <div className="flex-1 overflow-y-auto p-5 space-y-6 text-xs text-gray-700 font-sans">
+                    {/* Full Header Name */}
+                    <div className="space-y-1.5">
+                      <h4 className="font-display font-black text-gray-950 text-lg leading-snug">
+                        {selectedAttendee.formData.fullName}
+                      </h4>
+                      <p className="text-[10px] text-gray-400 font-medium flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-gray-400" /> Registered on: <span className="font-semibold text-slate-650">{new Date(selectedAttendee.date).toLocaleDateString()}</span> at <span className="font-mono text-slate-650">{new Date(selectedAttendee.date).toLocaleTimeString()}</span>
+                      </p>
+                    </div>
+
+                    {/* Contact Block Grid */}
+                    <div className="border-t border-gray-100 pt-4 space-y-2.5">
+                      <p className="flex items-center gap-2.5 font-medium text-slate-800">
+                        <Mail className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        <span className="truncate hover:underline select-all">{selectedAttendee.formData.email}</span>
+                      </p>
+                      <p className="flex items-center gap-2.5 font-medium text-slate-800">
+                        <Phone className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        <span className="select-all">{selectedAttendee.formData.phone}</span>
+                      </p>
+                    </div>
+
+                    {/* Quick Communication Suite */}
+                    <div className="border-t border-gray-100 pt-4 space-y-2.5">
+                      <span className="text-[9.5px] uppercase font-black text-indigo-900 tracking-wider block">Communication Options</span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <a
+                          href={gmailUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center justify-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-250 rounded-lg text-[10.5px] font-bold cursor-pointer transition-colors text-center shadow-xs"
+                          title="Open Gmail Composer with Profile Sheet pre-inserted in message body"
+                        >
+                          <Send className="w-3.5 h-3.5 text-rose-600" />
+                          <span>Send via Gmail</span>
+                        </a>
+                        <a
+                          href={mailtoUrl}
+                          className="flex items-center justify-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-brand-blue border border-blue-250 rounded-lg text-[10.5px] font-bold cursor-pointer transition-colors text-center shadow-xs"
+                          title="Open native desktop/mobile mail client"
+                        >
+                          <Mail className="w-3.5 h-3.5 text-brand-blue-hover" />
+                          <span>System Email</span>
+                        </a>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyProfileText(selectedAttendee)}
+                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-slate-50 hover:bg-slate-100 text-slate-750 border border-slate-200 rounded-lg text-[10.5px] font-bold cursor-pointer transition-colors shadow-2xs"
+                        title="Copy profile details format to clipboard"
+                      >
+                        {copiedRef === selectedAttendee.ref ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            <span className="text-emerald-700">Copied Profile Sheet!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Copy Profile to Clipboard</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
 
                   {/* Homecoming Treasury Milestone Balance Sheet */}
                   {(() => {
@@ -972,7 +1097,8 @@ export default function AdminPortal({
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Custom Stateful Deletion Modal to bypass iframe window.confirm limitations cleanly */}
       {deleteConfirmRef && (() => {
