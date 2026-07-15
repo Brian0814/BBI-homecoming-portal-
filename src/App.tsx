@@ -287,6 +287,14 @@ export default function App() {
 
     if (isAllValid) {
       setIsSubmitting(true);
+      
+      // Clear any prior submit errors
+      setErrors((prev) => {
+        const copy = { ...prev };
+        delete copy.submit;
+        return copy;
+      });
+
       // Generate order reference number
       const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
       let randomPart = "";
@@ -304,24 +312,29 @@ export default function App() {
       // Persist submission state in Firestore in real-time
       try {
         await setDoc(doc(db, "registrations", refCode), newEntry);
-      } catch (e) {
-        console.error("Could not write order to Firestore:", e);
+        
+        // Persist submission state in history as a local fallback ONLY after database confirmation
+        try {
+          const existingHistory = JSON.parse(localStorage.getItem(ORDER_HISTORY_KEY) || "[]");
+          existingHistory.push(newEntry);
+          localStorage.setItem(ORDER_HISTORY_KEY, JSON.stringify(existingHistory));
+        } catch (localErr) {
+          console.error("Could not write order history to localStorage fallback:", localErr);
+        }
+
+        setOrderRefNumber(refCode);
+        setIsSubmitted(true);
+        setIsSubmitting(false);
+
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } catch (firestoreErr) {
+        console.error("Could not write order to Firestore:", firestoreErr);
+        setErrors((prev) => ({
+          ...prev,
+          submit: "We encountered a network or server issue and could not save your registration to our secure database. Please check your internet connection and try clicking 'Submit Package Order' again."
+        }));
+        setIsSubmitting(false);
       }
-
-      // Persist submission state in history as a local fallback
-      try {
-        const existingHistory = JSON.parse(localStorage.getItem(ORDER_HISTORY_KEY) || "[]");
-        existingHistory.push(newEntry);
-        localStorage.setItem(ORDER_HISTORY_KEY, JSON.stringify(existingHistory));
-      } catch (e) {
-        console.error("Could not write order history:", e);
-      }
-
-      setOrderRefNumber(refCode);
-      setIsSubmitted(true);
-      setIsSubmitting(false);
-
-      window.scrollTo({ top: 0, behavior: "smooth" });
     }
   };
 
@@ -725,6 +738,16 @@ export default function App() {
                       <span className="font-mono text-xl sm:text-2xl font-black text-brand-blue leading-tight block">
                         ${finalPrice}
                       </span>
+                    </div>
+                  </div>
+                )}
+
+                {errors.submit && (
+                  <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 text-xs text-red-700 font-medium animate-in fade-in slide-in-from-top-1 duration-150">
+                    <AlertCircle className="w-5 h-5 text-red-500 shrink-0" />
+                    <div className="space-y-1">
+                      <p className="font-extrabold text-sm uppercase tracking-wide">Database Registration Failed</p>
+                      <p className="leading-relaxed">{errors.submit}</p>
                     </div>
                   </div>
                 )}
