@@ -4,12 +4,12 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { OrderForm, PACKAGE_OPTIONS } from "../types";
+import { OrderForm, PACKAGE_OPTIONS, SHIRT_SIZES, STATE_LIST } from "../types";
 import { 
   Users, Trash2, Search, Download, Printer, ArrowUpDown, ChevronDown, 
   Layers, CreditCard, Sparkles, Filter, MoreHorizontal, ShoppingCart, 
   MapPin, Phone, Mail, FileText, ArrowLeft, Ticket, ShoppingBag, Eye, Calendar, X,
-  Send, Copy, Check
+  Send, Copy, Check, Edit, AlertCircle
 } from "lucide-react";
 import { getPaymentMilestones } from "../lib/paymentUtils";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
@@ -141,6 +141,10 @@ export default function AdminPortal({
   const [selectedAttendee, setSelectedAttendee] = useState<HistoryEntry | null>(null);
   const [deleteConfirmRef, setDeleteConfirmRef] = useState<string | null>(null);
   const [copiedRef, setCopiedRef] = useState<string | null>(null);
+  const [editingAttendee, setEditingAttendee] = useState<HistoryEntry | null>(null);
+  const [editForm, setEditForm] = useState<OrderForm | null>(null);
+  const [editErrors, setEditErrors] = useState<Record<string, string>>({});
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   // Load history with real-time Firestore sync + local fallback failsafe
   useEffect(() => {
@@ -304,6 +308,83 @@ BBI Homecoming Committee`;
   // Delete handler
   const handleDeleteEntry = (ref: string) => {
     setDeleteConfirmRef(ref);
+  };
+
+  // Edit handlers
+  const handleStartEdit = (attendee: HistoryEntry) => {
+    setEditingAttendee(attendee);
+    setEditForm({ ...attendee.formData });
+    setEditErrors({});
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingAttendee || !editForm) return;
+
+    // Validate
+    const errors: Record<string, string> = {};
+    if (!editForm.fullName.trim()) errors.fullName = "Full Name is required";
+    if (!editForm.email.trim()) errors.email = "Email is required";
+    if (!editForm.phone.trim()) errors.phone = "Phone is required";
+    if (!editForm.shirtSize) errors.shirtSize = "Shirt size is required";
+
+    if (!editForm.shippingAddress.street.trim()) errors.street = "Street address is required";
+    if (!editForm.shippingAddress.city.trim()) errors.city = "City is required";
+    if (!editForm.shippingAddress.state.trim()) errors.state = "State is required";
+    if (!editForm.shippingAddress.zipCode.trim()) errors.zipCode = "ZIP Code is required";
+
+    if (editForm.addDetroitJacket) {
+      if (!editForm.jacketSize) errors.jacketSize = "Jacket size is required";
+      if (!editForm.jacketCrossingYear.trim()) errors.jacketCrossingYear = "Crossing year is required";
+      if (!editForm.jacketLineName.trim()) errors.jacketLineName = "Line name is required";
+      if (!editForm.jacketEntireLineName.trim()) errors.jacketEntireLineName = "Entire line name is required";
+      if (!editForm.jacketLineNumber.trim()) errors.jacketLineNumber = "Line number is required";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setEditErrors(errors);
+      return;
+    }
+
+    setIsSavingEdit(true);
+    try {
+      const updatedEntry: HistoryEntry = {
+        ...editingAttendee,
+        formData: editForm
+      };
+
+      // 1. Save to Firestore
+      await setDoc(doc(db, "registrations", editingAttendee.ref), updatedEntry);
+
+      // 2. Local fallback sync
+      try {
+        const saved = localStorage.getItem("bbi_homecoming_2026_history");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            const index = parsed.findIndex((x) => x.ref === editingAttendee.ref);
+            if (index !== -1) {
+              parsed[index] = updatedEntry;
+              localStorage.setItem("bbi_homecoming_2026_history", JSON.stringify(parsed));
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Local storage fallback save failed:", err);
+      }
+
+      // 3. Update active selections
+      if (selectedAttendee && selectedAttendee.ref === editingAttendee.ref) {
+        setSelectedAttendee(updatedEntry);
+      }
+
+      setEditingAttendee(null);
+      setEditForm(null);
+    } catch (error) {
+      console.error("Failed to update registration in Firestore:", error);
+      handleFirestoreError(error, OperationType.WRITE, `registrations/${editingAttendee.ref}`);
+    } finally {
+      setIsSavingEdit(false);
+    }
   };
 
   // CSV Spreadsheet Excel compilation download routine
@@ -820,13 +901,21 @@ BBI Homecoming Committee`;
                       </td>
 
                       {/* Action parameters */}
-                      <td className="px-6 py-4 text-right space-x-2" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-6 py-4 text-right space-x-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
                           onClick={() => setSelectedAttendee(item)}
                           className="px-2.5 py-1.5 rounded-lg bg-brand-blue hover:bg-brand-blue-dark text-white font-extrabold text-[10.5px] cursor-pointer shadow-xs transition-all"
                         >
                           View Profile
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleStartEdit(item)}
+                          className="p-1.5 rounded-lg hover:bg-slate-100 text-gray-500 hover:text-brand-blue cursor-pointer transition-colors inline-flex items-center justify-center align-middle border border-transparent hover:border-slate-200"
+                          title="Edit details"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
                         </button>
                         <button
                           type="button"
@@ -1078,6 +1167,14 @@ BBI Homecoming Committee`;
                 <div className="border-t border-gray-100 p-4.5 bg-slate-50 flex items-center justify-end gap-2.5 flex-shrink-0">
                   <button
                     type="button"
+                    onClick={() => handleStartEdit(selectedAttendee)}
+                    className="flex items-center gap-1.5 px-3 py-2 border border-blue-200 text-brand-blue rounded-lg bg-white hover:bg-blue-50 text-[11px] font-bold cursor-pointer transition-colors shadow-2xs"
+                  >
+                    <Edit className="w-3.5 h-3.5 text-brand-blue-hover" />
+                    <span>Edit Profile</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => handleDeleteEntry(selectedAttendee.ref)}
                     className="flex items-center gap-1 px-3 py-2 border border-red-200 text-red-650 rounded-lg bg-white hover:bg-red-50 text-[11px] font-bold cursor-pointer transition-colors"
                   >
@@ -1168,6 +1265,444 @@ BBI Homecoming Committee`;
           </div>
         );
       })()}
+
+      {/* Custom Stateful Edit Modal */}
+      {editingAttendee && editForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto" id="edit-profile-modal">
+          <div className="bg-white rounded-2xl border border-gray-200 shadow-2xl max-w-2xl w-full my-8 transform scale-100 transition-all duration-200 flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-gray-150 flex items-center justify-between bg-slate-950 rounded-t-2xl">
+              <div className="flex items-center gap-2 text-white">
+                <Edit className="w-4 h-4 text-brand-blue-light" />
+                <h4 className="font-display font-black text-xs uppercase tracking-widest text-brand-blue-light">
+                  Edit Registrant: {editingAttendee.ref}
+                </h4>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingAttendee(null);
+                  setEditForm(null);
+                }}
+                className="text-slate-450 hover:text-white transition-colors cursor-pointer p-1 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-6 text-xs text-gray-750 font-sans flex-1">
+              {/* Contact Information Section */}
+              <div className="space-y-4">
+                <h5 className="font-display font-extrabold text-[10px] uppercase tracking-wider text-slate-500 border-b border-gray-100 pb-1">
+                  Contact Information
+                </h5>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-[10px] uppercase font-black tracking-wider text-gray-500 mb-1">
+                      Full Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={editForm.fullName}
+                      onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
+                      className={`block w-full rounded-lg border bg-white px-3 py-2 text-gray-900 shadow-xs focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue focus:outline-hidden ${
+                        editErrors.fullName ? "border-red-500" : "border-gray-300"
+                      }`}
+                    />
+                    {editErrors.fullName && (
+                      <p className="text-[10px] text-red-500 font-semibold mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" /> {editErrors.fullName}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase font-black tracking-wider text-gray-500 mb-1">
+                      Email Address *
+                    </label>
+                    <input
+                      type="email"
+                      value={editForm.email}
+                      onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                      className={`block w-full rounded-lg border bg-white px-3 py-2 text-gray-900 shadow-xs focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue focus:outline-hidden ${
+                        editErrors.email ? "border-red-500" : "border-gray-300"
+                      }`}
+                    />
+                    {editErrors.email && (
+                      <p className="text-[10px] text-red-500 font-semibold mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" /> {editErrors.email}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase font-black tracking-wider text-gray-500 mb-1">
+                      Phone Number *
+                    </label>
+                    <input
+                      type="text"
+                      value={editForm.phone}
+                      onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                      className={`block w-full rounded-lg border bg-white px-3 py-2 text-gray-900 shadow-xs focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue focus:outline-hidden ${
+                        editErrors.phone ? "border-red-500" : "border-gray-300"
+                      }`}
+                    />
+                    {editErrors.phone && (
+                      <p className="text-[10px] text-red-500 font-semibold mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" /> {editErrors.phone}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Package & Customize Options */}
+              <div className="space-y-4">
+                <h5 className="font-display font-extrabold text-[10px] uppercase tracking-wider text-slate-500 border-b border-gray-100 pb-1">
+                  Package & Apparel Choices
+                </h5>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] uppercase font-black tracking-wider text-gray-500 mb-1">
+                      Homecoming Package *
+                    </label>
+                    <select
+                      value={editForm.selectedPackageId}
+                      onChange={(e) => setEditForm({ ...editForm, selectedPackageId: e.target.value })}
+                      className="block w-full rounded-lg border bg-white border-gray-300 px-3 py-2 text-gray-900 shadow-xs focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue focus:outline-hidden"
+                    >
+                      {PACKAGE_OPTIONS.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} (${p.price})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase font-black tracking-wider text-gray-500 mb-1">
+                      T-Shirt Size *
+                    </label>
+                    <select
+                      value={editForm.shirtSize}
+                      onChange={(e) => setEditForm({ ...editForm, shirtSize: e.target.value })}
+                      className={`block w-full rounded-lg border bg-white px-3 py-2 text-gray-900 shadow-xs focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue focus:outline-hidden ${
+                        editErrors.shirtSize ? "border-red-500" : "border-gray-300"
+                      }`}
+                    >
+                      <option value="">Select a shirt size...</option>
+                      {SHIRT_SIZES.map((sz) => (
+                        <option key={sz} value={sz}>
+                          Size {sz}
+                        </option>
+                      ))}
+                    </select>
+                    {editErrors.shirtSize && (
+                      <p className="text-[10px] text-red-500 font-semibold mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" /> {editErrors.shirtSize}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Checkbox Addons */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100 mt-2">
+                  <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={editForm.addFootballTicket}
+                      onChange={(e) => setEditForm({ ...editForm, addFootballTicket: e.target.checked })}
+                      className="h-4 w-4 rounded-sm border-gray-300 text-brand-blue focus:ring-brand-blue mt-0.5"
+                    />
+                    <div className="space-y-0.5">
+                      <span className="font-bold text-slate-800">Add Football Ticket RSVP</span>
+                      <p className="text-[10px] text-gray-400">Claims external intent to buy CCU Game RSVP</p>
+                    </div>
+                  </label>
+                  <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={editForm.addDetroitJacket}
+                      onChange={(e) => setEditForm({ ...editForm, addDetroitJacket: e.target.checked })}
+                      className="h-4 w-4 rounded-sm border-gray-300 text-brand-blue focus:ring-brand-blue mt-0.5"
+                    />
+                    <div className="space-y-0.5">
+                      <span className="font-bold text-slate-800">Include Carhartt Jacket (+$135)</span>
+                      <p className="text-[10px] text-gray-400">Embroidery-ready heavyweight wool jacket</p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Jacket custom details if checked */}
+              {editForm.addDetroitJacket && (
+                <div className="bg-indigo-50/30 p-4 rounded-xl border border-indigo-100/50 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+                  <h5 className="font-display font-extrabold text-[10px] uppercase tracking-wider text-indigo-900 flex items-center gap-1">
+                    <ShoppingBag className="w-3.5 h-3.5 text-indigo-700" /> Custom Jacket Embroidery
+                  </h5>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-[10px] uppercase font-black tracking-wider text-indigo-950 mb-1">
+                        Jacket Size *
+                      </label>
+                      <select
+                        value={editForm.jacketSize}
+                        onChange={(e) => setEditForm({ ...editForm, jacketSize: e.target.value })}
+                        className={`block w-full rounded-lg border bg-white px-3 py-2 text-gray-900 shadow-xs focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue focus:outline-hidden ${
+                          editErrors.jacketSize ? "border-red-500" : "border-gray-300"
+                        }`}
+                      >
+                        <option value="">Select...</option>
+                        {SHIRT_SIZES.map((sz) => (
+                          <option key={sz} value={sz}>
+                            Size {sz}
+                          </option>
+                        ))}
+                      </select>
+                      {editErrors.jacketSize && (
+                        <p className="text-[10px] text-red-500 font-semibold mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" /> {editErrors.jacketSize}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase font-black tracking-wider text-indigo-950 mb-1">
+                        Crossing Year *
+                      </label>
+                      <input
+                        type="text"
+                        value={editForm.jacketCrossingYear}
+                        onChange={(e) => setEditForm({ ...editForm, jacketCrossingYear: e.target.value })}
+                        className={`block w-full rounded-lg border bg-white px-3 py-2 text-gray-900 shadow-xs focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue focus:outline-hidden ${
+                          editErrors.jacketCrossingYear ? "border-red-500" : "border-gray-300"
+                        }`}
+                        placeholder="e.g. SPR 26"
+                      />
+                      {editErrors.jacketCrossingYear && (
+                        <p className="text-[10px] text-red-500 font-semibold mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" /> {editErrors.jacketCrossingYear}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase font-black tracking-wider text-indigo-950 mb-1">
+                        Line Number *
+                      </label>
+                      <input
+                        type="text"
+                        value={editForm.jacketLineNumber}
+                        onChange={(e) => setEditForm({ ...editForm, jacketLineNumber: e.target.value })}
+                        className={`block w-full rounded-lg border bg-white px-3 py-2 text-gray-900 shadow-xs focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue focus:outline-hidden ${
+                          editErrors.jacketLineNumber ? "border-red-500" : "border-gray-300"
+                        }`}
+                        placeholder="e.g. #04"
+                      />
+                      {editErrors.jacketLineNumber && (
+                        <p className="text-[10px] text-red-500 font-semibold mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" /> {editErrors.jacketLineNumber}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] uppercase font-black tracking-wider text-indigo-950 mb-1">
+                        Line Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={editForm.jacketLineName}
+                        onChange={(e) => setEditForm({ ...editForm, jacketLineName: e.target.value })}
+                        className={`block w-full rounded-lg border bg-white px-3 py-2 text-gray-900 shadow-xs focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue focus:outline-hidden ${
+                          editErrors.jacketLineName ? "border-red-500" : "border-gray-300"
+                        }`}
+                        placeholder="e.g. S.S. MERCURY"
+                      />
+                      {editErrors.jacketLineName && (
+                        <p className="text-[10px] text-red-500 font-semibold mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" /> {editErrors.jacketLineName}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-[10px] uppercase font-black tracking-wider text-indigo-950 mb-1">
+                        Entire Line Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={editForm.jacketEntireLineName}
+                        onChange={(e) => setEditForm({ ...editForm, jacketEntireLineName: e.target.value })}
+                        className={`block w-full rounded-lg border bg-white px-3 py-2 text-gray-900 shadow-xs focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue focus:outline-hidden ${
+                          editErrors.jacketEntireLineName ? "border-red-500" : "border-gray-300"
+                        }`}
+                        placeholder="e.g. 19 SOULS OF DESTRUCTION"
+                      />
+                      {editErrors.jacketEntireLineName && (
+                        <p className="text-[10px] text-red-500 font-semibold mt-1 flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" /> {editErrors.jacketEntireLineName}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Shipping Address coordinates */}
+              <div className="space-y-4">
+                <h5 className="font-display font-extrabold text-[10px] uppercase tracking-wider text-slate-500 border-b border-gray-100 pb-1">
+                  Mailing Coordinates
+                </h5>
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+                  <div className="sm:col-span-6">
+                    <label className="block text-[10px] uppercase font-black tracking-wider text-gray-500 mb-1">
+                      Street Address *
+                    </label>
+                    <input
+                      type="text"
+                      value={editForm.shippingAddress.street}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          shippingAddress: { ...editForm.shippingAddress, street: e.target.value }
+                        })
+                      }
+                      className={`block w-full rounded-lg border bg-white px-3 py-2 text-gray-900 shadow-xs focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue focus:outline-hidden ${
+                        editErrors.street ? "border-red-500" : "border-gray-300"
+                      }`}
+                    />
+                    {editErrors.street && (
+                      <p className="text-[10px] text-red-500 font-semibold mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" /> {editErrors.street}
+                      </p>
+                    )}
+                  </div>
+                  <div className="sm:col-span-3">
+                    <label className="block text-[10px] uppercase font-black tracking-wider text-gray-500 mb-1">
+                      City *
+                    </label>
+                    <input
+                      type="text"
+                      value={editForm.shippingAddress.city}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          shippingAddress: { ...editForm.shippingAddress, city: e.target.value }
+                        })
+                      }
+                      className={`block w-full rounded-lg border bg-white px-3 py-2 text-gray-900 shadow-xs focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue focus:outline-hidden ${
+                        editErrors.city ? "border-red-500" : "border-gray-300"
+                      }`}
+                    />
+                    {editErrors.city && (
+                      <p className="text-[10px] text-red-500 font-semibold mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" /> {editErrors.city}
+                      </p>
+                    )}
+                  </div>
+                  <div className="sm:col-span-1.5">
+                    <label className="block text-[10px] uppercase font-black tracking-wider text-gray-500 mb-1">
+                      State *
+                    </label>
+                    <select
+                      value={editForm.shippingAddress.state}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          shippingAddress: { ...editForm.shippingAddress, state: e.target.value }
+                        })
+                      }
+                      className={`block w-full rounded-lg border bg-white px-2 py-2 text-gray-900 shadow-xs focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue focus:outline-hidden ${
+                        editErrors.state ? "border-red-500" : "border-gray-300"
+                      }`}
+                    >
+                      <option value="">--</option>
+                      {STATE_LIST.map((st) => (
+                        <option key={st} value={st}>
+                          {st}
+                        </option>
+                      ))}
+                    </select>
+                    {editErrors.state && (
+                      <p className="text-[10px] text-red-500 font-semibold mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" /> {editErrors.state}
+                      </p>
+                    )}
+                  </div>
+                  <div className="sm:col-span-1.5">
+                    <label className="block text-[10px] uppercase font-black tracking-wider text-gray-500 mb-1">
+                      ZIP *
+                    </label>
+                    <input
+                      type="text"
+                      value={editForm.shippingAddress.zipCode}
+                      onChange={(e) =>
+                        setEditForm({
+                          ...editForm,
+                          shippingAddress: { ...editForm.shippingAddress, zipCode: e.target.value }
+                        })
+                      }
+                      className={`block w-full rounded-lg border bg-white px-2 py-2 text-gray-900 shadow-xs focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue focus:outline-hidden ${
+                        editErrors.zipCode ? "border-red-500" : "border-gray-300"
+                      }`}
+                    />
+                    {editErrors.zipCode && (
+                      <p className="text-[10px] text-red-500 font-semibold mt-1 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" /> {editErrors.zipCode}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Committee notes */}
+              <div className="space-y-4">
+                <h5 className="font-display font-extrabold text-[10px] uppercase tracking-wider text-slate-500 border-b border-gray-100 pb-1">
+                  Committee Notes & Special Requests
+                </h5>
+                <div>
+                  <textarea
+                    rows={2}
+                    value={editForm.specialRequests}
+                    onChange={(e) => setEditForm({ ...editForm, specialRequests: e.target.value })}
+                    className="block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-xs focus:ring-2 focus:ring-brand-blue/20 focus:border-brand-blue focus:outline-hidden sm:text-xs"
+                    placeholder="Dietary constraints, delivery wishes, comments..."
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-gray-150 bg-slate-50 flex items-center justify-end gap-2.5 rounded-b-2xl">
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingAttendee(null);
+                  setEditForm(null);
+                }}
+                className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-gray-700 rounded-lg text-xs font-bold cursor-pointer transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isSavingEdit}
+                onClick={handleSaveEdit}
+                className="px-5 py-2 bg-brand-blue hover:bg-brand-blue-dark text-white rounded-lg text-xs font-bold cursor-pointer shadow-md transition-all flex items-center gap-1.5 disabled:opacity-80 disabled:cursor-not-allowed"
+              >
+                {isSavingEdit ? (
+                  <>
+                    <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4 stroke-[2.5]" />
+                    <span>Save Changes</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

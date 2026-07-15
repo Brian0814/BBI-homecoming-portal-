@@ -33,7 +33,7 @@ export interface OrderForm {
 }
 
 export const SHIRT_SIZES = [
-  "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"
+  "XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL", "5XL"
 ];
 
 export const PACKAGE_OPTIONS: PackageOption[] = [
