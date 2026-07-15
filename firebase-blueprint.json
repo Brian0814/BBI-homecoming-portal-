@@ -51,6 +51,48 @@
             "addFootballTicket",
             "addDetroitJacket"
           ]
+        },
+        "payments": {
+          "type": "object",
+          "description": "Optional payment tracking record for milestones",
+          "properties": {
+            "July 19": {
+              "type": "object",
+              "properties": {
+                "paid": { "type": "boolean" },
+                "paidAt": { "type": "string" },
+                "method": { "type": "string" },
+                "amount": { "type": "number" }
+              }
+            },
+            "August 15": {
+              "type": "object",
+              "properties": {
+                "paid": { "type": "boolean" },
+                "paidAt": { "type": "string" },
+                "method": { "type": "string" },
+                "amount": { "type": "number" }
+              }
+            },
+            "September 15": {
+              "type": "object",
+              "properties": {
+                "paid": { "type": "boolean" },
+                "paidAt": { "type": "string" },
+                "method": { "type": "string" },
+                "amount": { "type": "number" }
+              }
+            },
+            "October 15": {
+              "type": "object",
+              "properties": {
+                "paid": { "type": "boolean" },
+                "paidAt": { "type": "string" },
+                "method": { "type": "string" },
+                "amount": { "type": "number" }
+              }
+            }
+          }
         }
       },
       "required": ["ref", "date", "formData"]

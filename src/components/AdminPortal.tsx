@@ -19,6 +19,14 @@ interface HistoryEntry {
   ref: string;
   date: string;
   formData: OrderForm;
+  payments?: {
+    [dateKey: string]: {
+      paid: boolean;
+      paidAt?: string | null;
+      method?: string | null;
+      amount?: number;
+    };
+  };
 }
 
 interface AdminPortalProps {
@@ -387,6 +395,55 @@ BBI Homecoming Committee`;
     }
   };
 
+  // Record milestone payment event handler
+  const handleToggleMilestone = async (attendee: HistoryEntry, milestoneDate: string, isPaid: boolean, method: string = "Zelle") => {
+    try {
+      const currentPayments = attendee.payments || {};
+      const updatedPayments = {
+        ...currentPayments,
+        [milestoneDate]: {
+          paid: isPaid,
+          paidAt: isPaid ? new Date().toISOString() : null,
+          method: isPaid ? method : null,
+          amount: isPaid ? getPaymentMilestones(attendee.formData.selectedPackageId, attendee.formData.addDetroitJacket).find(m => m.date === milestoneDate)?.amount || 0 : 0
+        }
+      };
+
+      const updatedEntry: HistoryEntry = {
+        ...attendee,
+        payments: updatedPayments
+      };
+
+      // Save to Firestore
+      await setDoc(doc(db, "registrations", attendee.ref), updatedEntry);
+
+      // Save to Local Fallback Sync
+      try {
+        const saved = localStorage.getItem("bbi_homecoming_2026_history");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            const index = parsed.findIndex((x) => x.ref === attendee.ref);
+            if (index !== -1) {
+              parsed[index] = updatedEntry;
+              localStorage.setItem("bbi_homecoming_2026_history", JSON.stringify(parsed));
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Local storage fallback save failed on payment toggle:", err);
+      }
+
+      // Update active selected attendee view
+      if (selectedAttendee && selectedAttendee.ref === attendee.ref) {
+        setSelectedAttendee(updatedEntry);
+      }
+    } catch (error) {
+      console.error("Failed to update payment milestone in Firestore:", error);
+      handleFirestoreError(error, OperationType.WRITE, `registrations/${attendee.ref}`);
+    }
+  };
+
   // CSV Spreadsheet Excel compilation download routine
   const handleExportCSV = () => {
     const headers = [
@@ -480,16 +537,47 @@ BBI Homecoming Committee`;
     }
   };
 
+  // Payment calculations per attendee helper
+  const getAttendeePaymentStats = (item: HistoryEntry) => {
+    const milestones = getPaymentMilestones(item.formData.selectedPackageId, item.formData.addDetroitJacket);
+    const grandTotal = calculateGrandTotal(item.formData);
+    let totalPaid = 0;
+    milestones.forEach((m) => {
+      if (item.payments?.[m.date]?.paid) {
+        totalPaid += m.amount;
+      }
+    });
+    const balanceDue = Math.max(0, grandTotal - totalPaid);
+    
+    let statusLabel = "Unpaid";
+    let statusColor = "bg-red-50 text-red-700 border-red-200";
+    
+    if (totalPaid === 0) {
+      statusLabel = "Unpaid";
+      statusColor = "bg-red-50/50 text-red-650 border-red-150";
+    } else if (balanceDue === 0) {
+      statusLabel = "Paid in Full";
+      statusColor = "bg-emerald-50 text-emerald-800 border-emerald-250";
+    } else {
+      const firstMilestoneKey = milestones[0]?.date;
+      const isFirstPaid = item.payments?.[firstMilestoneKey]?.paid || false;
+      if (isFirstPaid) {
+        statusLabel = "Deposit Paid";
+        statusColor = "bg-blue-50 text-brand-blue border-blue-250";
+      } else {
+        statusLabel = "Partially Paid";
+        statusColor = "bg-amber-50 text-amber-800 border-amber-250";
+      }
+    }
+    
+    return { totalPaid, balanceDue, statusLabel, statusColor, milestones };
+  };
+
   // Statistics summaries calculations
   const totalEntries = history.length;
   const totalRevenue = history.reduce((sum, item) => sum + calculateGrandTotal(item.formData), 0);
-  const totalDepositDueOverall = history.reduce((sum, item) => {
-    const pkg = PACKAGE_OPTIONS.find((p) => p.id === item.formData.selectedPackageId);
-    const packageDeposit = pkg ? 100 : 0;
-    const jacketDeposit = item.formData.addDetroitJacket ? 70 : 0;
-    return sum + packageDeposit + jacketDeposit;
-  }, 0);
-  const totalRemainingBalanceOverall = totalRevenue - totalDepositDueOverall;
+  const totalPaidOverall = history.reduce((sum, item) => sum + getAttendeePaymentStats(item).totalPaid, 0);
+  const totalOutstandingBalanceOverall = totalRevenue - totalPaidOverall;
   const totalJacketOrders = history.filter((x) => x.formData.addDetroitJacket).length;
   const totalTicketsSold = history.filter((x) => x.formData.addFootballTicket).length;
 
@@ -598,23 +686,25 @@ BBI Homecoming Committee`;
               <div className="hidden sm:block sm:col-span-1 border-l border-slate-800 h-12 justify-self-center" />
 
               <div className="sm:col-span-6 space-y-3">
-                {/* Deposit segment */}
+                {/* Payments Collected segment */}
                 <div className="flex items-center justify-between text-xs">
                   <div className="space-y-0.5">
-                    <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider block">Due July 19 (Deposits)</span>
-                    <span className="font-mono text-base font-extrabold text-brand-blue-light">${totalDepositDueOverall.toLocaleString()}</span>
+                    <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider block">Treasury Payments Collected</span>
+                    <span className="font-mono text-base font-extrabold text-brand-blue-light">${totalPaidOverall.toLocaleString()}</span>
                   </div>
                 </div>
 
-                {/* Balance segment */}
+                {/* Outstanding Balance segment */}
                 <div className="flex items-center justify-between text-xs">
                   <div className="space-y-0.5">
-                    <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider block">Due Sept 4 (Balances)</span>
-                    <span className="font-mono text-base font-extrabold text-amber-500">${totalRemainingBalanceOverall.toLocaleString()}</span>
+                    <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider block">Outstanding Balance Owed</span>
+                    <span className="font-mono text-base font-extrabold text-amber-500">${totalOutstandingBalanceOverall.toLocaleString()}</span>
                   </div>
-                  <span className="inline-flex items-center gap-1 text-[9px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider">
-                    ⏰ Remainder
-                  </span>
+                  {totalOutstandingBalanceOverall > 0 && (
+                    <span className="inline-flex items-center gap-1 text-[9px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.5 rounded-md font-bold uppercase tracking-wider">
+                      ⏰ Remainder
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -623,19 +713,19 @@ BBI Homecoming Committee`;
           {/* Simple Ratio progress bar */}
           <div className="mt-5 space-y-1.5">
             <div className="flex justify-between items-center text-[9px] text-slate-400 font-semibold uppercase tracking-wider">
-              <span>Deposit vs Balance Ratio</span>
+              <span>Collection Progress Ratio</span>
               <span>
-                {totalRevenue > 0 ? Math.round((totalDepositDueOverall / totalRevenue) * 100) : 0}% Deposits
+                {totalRevenue > 0 ? Math.round((totalPaidOverall / totalRevenue) * 100) : 0}% Collected
               </span>
             </div>
             <div className="w-full bg-slate-900 rounded-full h-1.5 overflow-hidden flex border border-slate-800">
               <div 
                 className="bg-brand-blue-light h-full rounded-full" 
-                style={{ width: `${totalRevenue > 0 ? (totalDepositDueOverall / totalRevenue) * 105 : 0}%` }}
+                style={{ width: `${totalRevenue > 0 ? (totalPaidOverall / totalRevenue) * 100 : 0}%` }}
               />
               <div 
-                className="bg-amber-500 h-full rounded-full" 
-                style={{ width: `${totalRevenue > 0 ? (totalRemainingBalanceOverall / totalRevenue) * 105 : 0}%` }}
+                className="bg-amber-50 h-full rounded-full" 
+                style={{ width: `${totalRevenue > 0 ? (totalOutstandingBalanceOverall / totalRevenue) * 100 : 0}%` }}
               />
             </div>
           </div>
@@ -833,6 +923,7 @@ BBI Homecoming Committee`;
                   <th className="px-6 py-3.5 text-left">Member Name</th>
                   <th className="px-6 py-3.5 text-left hidden sm:table-cell">Reg Category</th>
                   <th className="px-6 py-3.5 text-center">Add-Ons</th>
+                  <th className="px-6 py-3.5 text-center">Payment Status</th>
                   <th className="px-6 py-3.5 text-right">Sum Owed</th>
                   <th className="px-6 py-3.5 text-right">Action</th>
                 </tr>
@@ -883,6 +974,28 @@ BBI Homecoming Committee`;
                             <span className="text-[9.5px] text-gray-350 font-bold bg-slate-50 border border-slate-150 px-2 py-0.5 rounded-xs">No Addons</span>
                           )}
                         </div>
+                      </td>
+
+                      {/* Payment Status column */}
+                      <td className="px-6 py-4 text-center">
+                        {(() => {
+                          const { totalPaid, statusLabel, statusColor } = getAttendeePaymentStats(item);
+                          return (
+                            <div className="inline-flex flex-col items-center">
+                              <span className={`inline-flex items-center gap-1.5 text-[9.5px] font-black uppercase px-2 py-0.5 rounded-full border ${statusColor}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${
+                                  statusLabel === "Paid in Full" ? "bg-emerald-500" :
+                                  statusLabel === "Deposit Paid" ? "bg-blue-500" :
+                                  statusLabel === "Partially Paid" ? "bg-amber-500" : "bg-red-500"
+                                }`} />
+                                {statusLabel}
+                              </span>
+                              <span className="text-[9.5px] text-slate-500 font-mono font-bold mt-1 tracking-tight">
+                                ${totalPaid.toLocaleString()} / ${total.toLocaleString()}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* SUM total */}
@@ -1059,33 +1172,89 @@ BBI Homecoming Committee`;
 
                   {/* Homecoming Treasury Milestone Balance Sheet */}
                   {(() => {
-                    const { total } = calculateDepositAndBalance(selectedAttendee.formData);
+                    const grandTotal = calculateGrandTotal(selectedAttendee.formData);
                     const memberMilestones = getPaymentMilestones(selectedAttendee.formData.selectedPackageId, selectedAttendee.formData.addDetroitJacket);
+                    const { totalPaid } = getAttendeePaymentStats(selectedAttendee);
                     return (
-                      <div className="border-t border-gray-100 pt-4 space-y-2.5">
-                        <span className="text-[10px] uppercase font-extrabold text-slate-500 tracking-wider block">Treasury Payment Milestones</span>
-                        <div className="bg-slate-50 border border-gray-200 p-3 rounded-xl space-y-2.5 text-xs">
-                          <div className="flex items-center justify-between font-extrabold text-slate-800">
-                            <span>Total Registered Cost:</span>
-                            <span className="font-mono text-gray-950 text-sm">${total}</span>
-                          </div>
-                          <div className="border-t border-gray-200/80 pt-2 space-y-2">
-                            {memberMilestones.map((m, mIdx) => (
-                              <div key={mIdx} className="flex flex-col gap-1 bg-white border border-gray-150 p-2 rounded-lg">
-                                <div className="flex items-center justify-between text-[11px] font-bold">
-                                  <span className="text-gray-800">{m.date} Milestone</span>
-                                  <span className={`font-mono font-black ${m.amount === 0 ? "text-emerald-600" : "text-brand-blue"}`}>
+                      <div className="border-t border-gray-100 pt-4 space-y-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] uppercase font-extrabold text-slate-500 tracking-wider">Treasury Payment Tracking</span>
+                          <span className="text-[10.5px] font-bold text-gray-900 bg-slate-100 border border-slate-250 px-2 py-0.5 rounded-full font-mono">
+                            Paid: ${totalPaid.toLocaleString()} / ${grandTotal.toLocaleString()}
+                          </span>
+                        </div>
+                        
+                        <div className="space-y-2.5">
+                          {memberMilestones.map((m, mIdx) => {
+                            const paymentRecord = selectedAttendee.payments?.[m.date];
+                            const isPaid = paymentRecord?.paid || false;
+                            const isZero = m.amount === 0;
+
+                            return (
+                              <div key={mIdx} className={`flex flex-col gap-2 border p-3 rounded-xl transition-all ${
+                                isPaid ? "bg-emerald-50/60 border-emerald-250" : "bg-slate-50/50 border-slate-150"
+                              }`}>
+                                <div className="flex items-center justify-between font-bold">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-slate-900 text-xs font-black">{m.date} Milestone</span>
+                                    {isPaid && (
+                                      <span className="inline-flex items-center gap-0.5 text-[8.5px] font-black uppercase px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-250">
+                                        ✓ Paid
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className={`font-mono text-[13px] font-black ${isZero ? "text-emerald-600" : "text-brand-blue"}`}>
                                     ${m.amount}
                                   </span>
                                 </div>
-                                {m.amount > 0 ? (
-                                  <span className="text-[9.5px] text-brand-blue font-bold block leading-none">Installment Scheduled</span>
+
+                                {isZero ? (
+                                  <span className="text-[9.5px] text-emerald-650 font-black block leading-none uppercase">Fully cleared • No amount due</span>
                                 ) : (
-                                  <span className="text-[9.5px] text-emerald-600 font-bold block leading-none">Fully cleared • No installment</span>
+                                  <div className="space-y-2">
+                                    {isPaid ? (
+                                      <div className="flex items-center justify-between text-[10px] text-gray-500 border-t border-emerald-100/50 pt-2 font-semibold">
+                                        <div className="space-y-0.5">
+                                          <span className="block text-emerald-850">
+                                            Via: <strong className="font-mono uppercase text-emerald-950">{paymentRecord?.method || "Zelle"}</strong>
+                                          </span>
+                                          <span className="block text-[9px] text-slate-400">
+                                            Recorded: {paymentRecord?.paidAt ? new Date(paymentRecord.paidAt).toLocaleDateString() : "N/A"}
+                                          </span>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleMilestone(selectedAttendee, m.date, false)}
+                                          className="px-2 py-1 rounded-md border border-red-200 text-red-650 bg-white hover:bg-red-50 text-[9.5px] font-bold cursor-pointer transition-all uppercase tracking-wider"
+                                        >
+                                          Reset to Unpaid
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div className="flex flex-col gap-2 border-t border-gray-200/50 pt-2">
+                                        <span className="text-[9px] text-amber-650 uppercase font-black block leading-none tracking-wider">
+                                          ● Scheduled/Unpaid
+                                        </span>
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                          <span className="text-[9.5px] text-slate-400 font-bold uppercase block mr-1">Mark Paid via:</span>
+                                          {["Zelle", "CashApp", "Cash", "Check"].map((method) => (
+                                            <button
+                                              key={method}
+                                              type="button"
+                                              onClick={() => handleToggleMilestone(selectedAttendee, m.date, true, method)}
+                                              className="px-2 py-0.5 rounded-md bg-white hover:bg-brand-blue hover:text-white border border-gray-300 hover:border-brand-blue text-[10px] font-extrabold text-slate-700 cursor-pointer transition-all shadow-3xs"
+                                            >
+                                              {method}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
                                 )}
                               </div>
-                            ))}
-                          </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );
