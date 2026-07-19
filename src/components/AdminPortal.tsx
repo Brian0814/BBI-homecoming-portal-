@@ -15,6 +15,14 @@ import { getPaymentMilestones } from "../lib/paymentUtils";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { collection, query, onSnapshot, doc, setDoc, deleteDoc, getDoc } from "firebase/firestore";
 
+interface PaymentTransaction {
+  id: string;
+  amount: number;
+  date: string;
+  method: string;
+  notes?: string;
+}
+
 interface HistoryEntry {
   ref: string;
   date: string;
@@ -27,6 +35,7 @@ interface HistoryEntry {
       amount?: number;
     };
   };
+  paymentTransactions?: PaymentTransaction[];
 }
 
 interface AdminPortalProps {
@@ -154,6 +163,14 @@ export default function AdminPortal({
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
   const [isSavingEdit, setIsSavingEdit] = useState(false);
 
+  // Custom Payment Form States
+  const [payAmount, setPayAmount] = useState("");
+  const [payMethod, setPayMethod] = useState("Zelle");
+  const [payDate, setPayDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [payNotes, setPayNotes] = useState("");
+  const [showAddPaymentForm, setShowAddPaymentForm] = useState(false);
+  const [payError, setPayError] = useState("");
+
   // Load history with real-time Firestore sync + local fallback failsafe
   useEffect(() => {
     // 1. Immediately load any local storage registrations as a fast offline fallback placeholder
@@ -206,6 +223,14 @@ export default function AdminPortal({
 
         // Save the sorted list back to state and localStorage (to keep cache fresh)
         setHistory(sorted);
+        
+        // Keep selectedAttendee in real-time sync if it is currently open
+        setSelectedAttendee((prevSelected) => {
+          if (!prevSelected) return null;
+          const freshSelected = sorted.find((x) => x.ref === prevSelected.ref);
+          return freshSelected || null;
+        });
+
         try {
           localStorage.setItem("bbi_homecoming_2026_history", JSON.stringify(sorted));
         } catch (e) {
@@ -398,20 +423,36 @@ BBI Homecoming Committee`;
   // Record milestone payment event handler
   const handleToggleMilestone = async (attendee: HistoryEntry, milestoneDate: string, isPaid: boolean, method: string = "Zelle") => {
     try {
-      const currentPayments = attendee.payments || {};
-      const updatedPayments = {
-        ...currentPayments,
-        [milestoneDate]: {
-          paid: isPaid,
-          paidAt: isPaid ? new Date().toISOString() : null,
-          method: isPaid ? method : null,
-          amount: isPaid ? getPaymentMilestones(attendee.formData.selectedPackageId, attendee.formData.addDetroitJacket).find(m => m.date === milestoneDate)?.amount || 0 : 0
+      const currentTxs = getAttendeeTransactions(attendee);
+      let updatedTxs: PaymentTransaction[] = [];
+
+      if (isPaid) {
+        // Find if this milestone is already recorded in the ledger
+        const alreadyHasMilestone = currentTxs.some(tx => tx.notes === `${milestoneDate} Milestone`);
+        if (!alreadyHasMilestone) {
+          const milestoneAmount = getPaymentMilestones(attendee.formData.selectedPackageId, attendee.formData.addDetroitJacket)
+            .find(m => m.date === milestoneDate)?.amount || 0;
+          
+          const newTx: PaymentTransaction = {
+            id: `tx-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            amount: milestoneAmount,
+            date: new Date().toISOString().split('T')[0],
+            method: method,
+            notes: `${milestoneDate} Milestone`
+          };
+          updatedTxs = [...currentTxs, newTx];
+        } else {
+          updatedTxs = [...currentTxs];
         }
-      };
+      } else {
+        // Remove the transaction(s) matching this milestone note
+        updatedTxs = currentTxs.filter(tx => tx.notes !== `${milestoneDate} Milestone`);
+      }
 
       const updatedEntry: HistoryEntry = {
         ...attendee,
-        payments: updatedPayments
+        paymentTransactions: updatedTxs,
+        payments: {} // Wipe legacy payments dictionary to keep ledger consistent
       };
 
       // Save to Firestore
@@ -440,6 +481,99 @@ BBI Homecoming Committee`;
       }
     } catch (error) {
       console.error("Failed to update payment milestone in Firestore:", error);
+      handleFirestoreError(error, OperationType.WRITE, `registrations/${attendee.ref}`);
+    }
+  };
+
+  // Add a custom payment transaction to the ledger
+  const handleAddTransaction = async (attendee: HistoryEntry, amount: number, date: string, method: string, notes: string = "") => {
+    try {
+      const currentTxs = getAttendeeTransactions(attendee);
+      
+      const newTx: PaymentTransaction = {
+        id: `tx-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        amount: Number(amount) || 0,
+        date: date || new Date().toISOString().split('T')[0],
+        method: method || "Zelle",
+        notes: notes.trim()
+      };
+
+      const updatedTxs = [...currentTxs, newTx];
+
+      const updatedEntry: HistoryEntry = {
+        ...attendee,
+        paymentTransactions: updatedTxs,
+        payments: {} // Wipe legacy payments dictionary
+      };
+
+      // Save to Firestore
+      await setDoc(doc(db, "registrations", attendee.ref), updatedEntry);
+
+      // Save to Local Fallback Sync
+      try {
+        const saved = localStorage.getItem("bbi_homecoming_2026_history");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            const index = parsed.findIndex((x) => x.ref === attendee.ref);
+            if (index !== -1) {
+              parsed[index] = updatedEntry;
+              localStorage.setItem("bbi_homecoming_2026_history", JSON.stringify(parsed));
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Local storage fallback save failed on add transaction:", err);
+      }
+
+      // Update active selected attendee view
+      if (selectedAttendee && selectedAttendee.ref === attendee.ref) {
+        setSelectedAttendee(updatedEntry);
+      }
+    } catch (error) {
+      console.error("Failed to add payment transaction in Firestore:", error);
+      handleFirestoreError(error, OperationType.WRITE, `registrations/${attendee.ref}`);
+    }
+  };
+
+  // Delete a payment transaction from the ledger
+  const handleDeleteTransaction = async (attendee: HistoryEntry, txId: string) => {
+    try {
+      const currentTxs = getAttendeeTransactions(attendee);
+      const updatedTxs = currentTxs.filter((tx) => tx.id !== txId);
+
+      const updatedEntry: HistoryEntry = {
+        ...attendee,
+        paymentTransactions: updatedTxs,
+        payments: {} // Wipe legacy payments dictionary
+      };
+
+      // Save to Firestore
+      await setDoc(doc(db, "registrations", attendee.ref), updatedEntry);
+
+      // Save to Local Fallback Sync
+      try {
+        const saved = localStorage.getItem("bbi_homecoming_2026_history");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            const index = parsed.findIndex((x) => x.ref === attendee.ref);
+            if (index !== -1) {
+              parsed[index] = updatedEntry;
+              localStorage.setItem("bbi_homecoming_2026_history", JSON.stringify(parsed));
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Local storage fallback save failed on delete transaction:", err);
+      }
+
+      // Update active selected attendee view
+      if (selectedAttendee && selectedAttendee.ref === attendee.ref) {
+        setSelectedAttendee(updatedEntry);
+      }
+    } catch (error) {
+      console.error("Failed to delete payment transaction in Firestore:", error);
       handleFirestoreError(error, OperationType.WRITE, `registrations/${attendee.ref}`);
     }
   };
@@ -537,16 +671,33 @@ BBI Homecoming Committee`;
     }
   };
 
+  const getAttendeeTransactions = (item: HistoryEntry): PaymentTransaction[] => {
+    const txs: PaymentTransaction[] = [];
+    if (item.paymentTransactions && Array.isArray(item.paymentTransactions)) {
+      txs.push(...item.paymentTransactions);
+    } else {
+      // Create transactions from legacy milestone payments on-the-fly
+      const milestones = getPaymentMilestones(item.formData.selectedPackageId, item.formData.addDetroitJacket);
+      milestones.forEach((m, idx) => {
+        if (item.payments?.[m.date]?.paid) {
+          txs.push({
+            id: `legacy-${idx}-${item.ref}`,
+            amount: item.payments[m.date].amount || m.amount || 0,
+            date: item.payments[m.date].paidAt || item.date || new Date().toISOString(),
+            method: item.payments[m.date].method || "Zelle",
+            notes: `${m.date} Milestone`
+          });
+        }
+      });
+    }
+    return txs;
+  };
+
   // Payment calculations per attendee helper
   const getAttendeePaymentStats = (item: HistoryEntry) => {
-    const milestones = getPaymentMilestones(item.formData.selectedPackageId, item.formData.addDetroitJacket);
+    const txs = getAttendeeTransactions(item);
     const grandTotal = calculateGrandTotal(item.formData);
-    let totalPaid = 0;
-    milestones.forEach((m) => {
-      if (item.payments?.[m.date]?.paid) {
-        totalPaid += m.amount;
-      }
-    });
+    const totalPaid = txs.reduce((sum, tx) => sum + (tx.amount || 0), 0);
     const balanceDue = Math.max(0, grandTotal - totalPaid);
     
     let statusLabel = "Unpaid";
@@ -555,13 +706,16 @@ BBI Homecoming Committee`;
     if (totalPaid === 0) {
       statusLabel = "Unpaid";
       statusColor = "bg-red-50/50 text-red-650 border-red-150";
-    } else if (balanceDue === 0) {
+    } else if (balanceDue <= 0.01) {
       statusLabel = "Paid in Full";
       statusColor = "bg-emerald-50 text-emerald-800 border-emerald-250";
     } else {
-      const firstMilestoneKey = milestones[0]?.date;
-      const isFirstPaid = item.payments?.[firstMilestoneKey]?.paid || false;
-      if (isFirstPaid) {
+      const selectedPackage = PACKAGE_OPTIONS.find((pkg) => pkg.id === item.formData.selectedPackageId);
+      const packageDeposit = selectedPackage ? 100 : 0;
+      const jacketDeposit = item.formData.addDetroitJacket ? 70 : 0;
+      const requiredDeposit = packageDeposit + jacketDeposit;
+      
+      if (totalPaid >= requiredDeposit) {
         statusLabel = "Deposit Paid";
         statusColor = "bg-blue-50 text-brand-blue border-blue-250";
       } else {
@@ -570,7 +724,7 @@ BBI Homecoming Committee`;
       }
     }
     
-    return { totalPaid, balanceDue, statusLabel, statusColor, milestones };
+    return { totalPaid, balanceDue, statusLabel, statusColor, transactions: txs };
   };
 
   // Statistics summaries calculations
@@ -1170,91 +1324,252 @@ BBI Homecoming Committee`;
                       </button>
                     </div>
 
-                  {/* Homecoming Treasury Milestone Balance Sheet */}
+                  {/* Homecoming Treasury Milestone Balance Sheet & Transaction Ledger */}
                   {(() => {
                     const grandTotal = calculateGrandTotal(selectedAttendee.formData);
-                    const memberMilestones = getPaymentMilestones(selectedAttendee.formData.selectedPackageId, selectedAttendee.formData.addDetroitJacket);
-                    const { totalPaid } = getAttendeePaymentStats(selectedAttendee);
-                    return (
-                      <div className="border-t border-gray-100 pt-4 space-y-3">
-                        <div className="flex justify-between items-center">
-                          <span className="text-[10px] uppercase font-extrabold text-slate-500 tracking-wider">Treasury Payment Tracking</span>
-                          <span className="text-[10.5px] font-bold text-gray-900 bg-slate-100 border border-slate-250 px-2 py-0.5 rounded-full font-mono">
-                            Paid: ${totalPaid.toLocaleString()} / ${grandTotal.toLocaleString()}
-                          </span>
-                        </div>
-                        
-                        <div className="space-y-2.5">
-                          {memberMilestones.map((m, mIdx) => {
-                            const paymentRecord = selectedAttendee.payments?.[m.date];
-                            const isPaid = paymentRecord?.paid || false;
-                            const isZero = m.amount === 0;
+                    const { totalPaid, balanceDue, statusLabel, statusColor, transactions } = getAttendeePaymentStats(selectedAttendee);
+                    const percentPaid = Math.min(100, Math.round((totalPaid / (grandTotal || 1)) * 100));
 
-                            return (
-                              <div key={mIdx} className={`flex flex-col gap-2 border p-3 rounded-xl transition-all ${
-                                isPaid ? "bg-emerald-50/60 border-emerald-250" : "bg-slate-50/50 border-slate-150"
-                              }`}>
-                                <div className="flex items-center justify-between font-bold">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-slate-900 text-xs font-black">{m.date} Milestone</span>
-                                    {isPaid && (
-                                      <span className="inline-flex items-center gap-0.5 text-[8.5px] font-black uppercase px-1.5 py-0.5 rounded-md bg-emerald-100 text-emerald-800 border border-emerald-250">
-                                        ✓ Paid
+                    const handleFormSubmit = async (e: React.FormEvent) => {
+                      e.preventDefault();
+                      setPayError("");
+                      const amount = parseFloat(payAmount);
+                      if (isNaN(amount) || amount <= 0) {
+                        setPayError("Please enter a valid payment amount greater than $0.");
+                        return;
+                      }
+                      await handleAddTransaction(selectedAttendee, amount, payDate, payMethod, payNotes || "Partial Payment");
+                      // Reset state
+                      setPayAmount("");
+                      setPayNotes("");
+                      setPayMethod("Zelle");
+                      setPayDate(new Date().toISOString().split("T")[0]);
+                      setShowAddPaymentForm(false);
+                    };
+
+                    return (
+                      <div className="border-t border-gray-100 pt-4 space-y-4">
+                        {/* Summary Header */}
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between items-center">
+                            <span className="text-[10px] uppercase font-black text-indigo-950 tracking-wider">Treasury Ledger (Option B)</span>
+                            <span className={`inline-flex items-center gap-1 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border ${statusColor}`}>
+                              {statusLabel}
+                            </span>
+                          </div>
+
+                          {/* Stat Grid */}
+                          <div className="grid grid-cols-3 gap-2 bg-slate-50 border border-slate-150 p-2.5 rounded-xl text-center">
+                            <div>
+                              <span className="text-[8.5px] text-gray-400 font-bold uppercase block">Grand Total</span>
+                              <span className="font-mono text-xs font-black text-slate-900">${grandTotal.toLocaleString()}</span>
+                            </div>
+                            <div className="border-x border-slate-200">
+                              <span className="text-[8.5px] text-emerald-600 font-bold uppercase block">Total Paid</span>
+                              <span className="font-mono text-xs font-black text-emerald-700">${totalPaid.toLocaleString()}</span>
+                            </div>
+                            <div>
+                              <span className="text-[8.5px] text-red-500 font-bold uppercase block">Balance Due</span>
+                              <span className="font-mono text-xs font-black text-red-650">${balanceDue.toLocaleString()}</span>
+                            </div>
+                          </div>
+
+                          {/* Progress bar */}
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-[9px] font-bold text-gray-400">
+                              <span>Payment Collections Progress</span>
+                              <span className="font-mono text-slate-700">{percentPaid}%</span>
+                            </div>
+                            <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden animate-pulse">
+                              <div 
+                                className={`h-full rounded-full transition-all duration-500 ${
+                                  percentPaid === 100 ? "bg-emerald-500" : percentPaid >= 50 ? "bg-blue-500" : "bg-amber-500"
+                                }`}
+                                style={{ width: `${percentPaid}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Transaction Ledger List */}
+                        <div className="space-y-2">
+                          <span className="text-[9.5px] uppercase font-bold text-slate-500 tracking-wider block">Recorded Transactions ({transactions.length})</span>
+                          
+                          {transactions.length === 0 ? (
+                            <div className="text-center p-4 bg-slate-50/50 border border-dashed border-slate-200 rounded-xl text-gray-400 text-[10.5px]">
+                              No transactions recorded yet. Click below to enter a payment.
+                            </div>
+                          ) : (
+                            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                              {transactions.map((tx) => (
+                                <div key={tx.id} className="flex items-center justify-between p-2 rounded-lg border border-slate-150 bg-white shadow-3xs text-[10.5px]">
+                                  <div className="space-y-0.5">
+                                    <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                                      <span className="bg-slate-100 text-slate-800 text-[8.5px] px-1.5 py-0.5 rounded-sm uppercase tracking-wider font-mono">
+                                        {tx.method}
                                       </span>
-                                    )}
+                                      {tx.notes && (
+                                        <span className="text-slate-500 text-[9.5px] truncate max-w-[120px]" title={tx.notes}>
+                                          {tx.notes}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <span className="text-[9px] text-gray-400 block">
+                                      {new Date(tx.date).toLocaleDateString()}
+                                    </span>
                                   </div>
-                                  <span className={`font-mono text-[13px] font-black ${isZero ? "text-emerald-600" : "text-brand-blue"}`}>
-                                    ${m.amount}
-                                  </span>
+
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono font-black text-emerald-700 text-xs">
+                                      +${tx.amount.toLocaleString()}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteTransaction(selectedAttendee, tx.id)}
+                                      className="p-1 rounded-md text-gray-405 hover:text-red-600 hover:bg-red-50 transition-all cursor-pointer"
+                                      title="Delete recorded transaction"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Add Payment Form / Trigger Button */}
+                        <div className="space-y-2">
+                          {!showAddPaymentForm ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowAddPaymentForm(true);
+                                setPayAmount(balanceDue > 0 ? balanceDue.toString() : "");
+                              }}
+                              className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-250 rounded-xl text-[10.5px] font-bold cursor-pointer transition-colors shadow-2xs text-center flex items-center justify-center gap-1.5"
+                            >
+                              <CreditCard className="w-3.5 h-3.5" />
+                              <span>Record New Payment / Partial</span>
+                            </button>
+                          ) : (
+                            <form onSubmit={handleFormSubmit} className="bg-slate-50/80 border border-slate-200 p-3 rounded-xl space-y-2.5 animate-in fade-in duration-200">
+                              <span className="text-[9.5px] uppercase font-black text-indigo-900 tracking-wider block">Record New Entry</span>
+                              
+                              {payError && (
+                                <p className="text-[9.5px] text-red-650 font-semibold leading-normal">{payError}</p>
+                              )}
+
+                              <div className="grid grid-cols-2 gap-2">
+                                {/* Amount */}
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold text-gray-400 block uppercase">Amount ($)</label>
+                                  <div className="relative">
+                                    <span className="absolute left-2.5 top-1.5 text-gray-400 font-bold font-mono">$</span>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      placeholder="0.00"
+                                      value={payAmount}
+                                      onChange={(e) => setPayAmount(e.target.value)}
+                                      className="pl-5 pr-2 py-1.5 text-xs block w-full rounded-md border border-gray-300 text-gray-900 font-mono font-bold focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                                    />
+                                  </div>
                                 </div>
 
-                                {isZero ? (
-                                  <span className="text-[9.5px] text-emerald-650 font-black block leading-none uppercase">Fully cleared • No amount due</span>
-                                ) : (
-                                  <div className="space-y-2">
-                                    {isPaid ? (
-                                      <div className="flex items-center justify-between text-[10px] text-gray-500 border-t border-emerald-100/50 pt-2 font-semibold">
-                                        <div className="space-y-0.5">
-                                          <span className="block text-emerald-850">
-                                            Via: <strong className="font-mono uppercase text-emerald-950">{paymentRecord?.method || "Zelle"}</strong>
-                                          </span>
-                                          <span className="block text-[9px] text-slate-400">
-                                            Recorded: {paymentRecord?.paidAt ? new Date(paymentRecord.paidAt).toLocaleDateString() : "N/A"}
-                                          </span>
-                                        </div>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleToggleMilestone(selectedAttendee, m.date, false)}
-                                          className="px-2 py-1 rounded-md border border-red-200 text-red-650 bg-white hover:bg-red-50 text-[9.5px] font-bold cursor-pointer transition-all uppercase tracking-wider"
-                                        >
-                                          Reset to Unpaid
-                                        </button>
-                                      </div>
-                                    ) : (
-                                      <div className="flex flex-col gap-2 border-t border-gray-200/50 pt-2">
-                                        <span className="text-[9px] text-amber-650 uppercase font-black block leading-none tracking-wider">
-                                          ● Scheduled/Unpaid
-                                        </span>
-                                        <div className="flex flex-wrap items-center gap-1.5">
-                                          <span className="text-[9.5px] text-slate-400 font-bold uppercase block mr-1">Mark Paid via:</span>
-                                          {["Zelle", "CashApp", "Cash", "Check"].map((method) => (
-                                            <button
-                                              key={method}
-                                              type="button"
-                                              onClick={() => handleToggleMilestone(selectedAttendee, m.date, true, method)}
-                                              className="px-2 py-0.5 rounded-md bg-white hover:bg-brand-blue hover:text-white border border-gray-300 hover:border-brand-blue text-[10px] font-extrabold text-slate-700 cursor-pointer transition-all shadow-3xs"
-                                            >
-                                              {method}
-                                            </button>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
+                                {/* Method */}
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold text-gray-400 block uppercase">Method</label>
+                                  <select
+                                    value={payMethod}
+                                    onChange={(e) => setPayMethod(e.target.value)}
+                                    className="py-1.5 px-2 text-xs block w-full rounded-md border border-gray-300 bg-white font-bold"
+                                  >
+                                    <option value="Zelle">Zelle</option>
+                                    <option value="CashApp">CashApp</option>
+                                    <option value="Cash">Cash</option>
+                                    <option value="Check">Check</option>
+                                    <option value="PayPal">PayPal</option>
+                                    <option value="Other">Other</option>
+                                  </select>
+                                </div>
                               </div>
-                            );
-                          })}
+
+                              <div className="grid grid-cols-2 gap-2">
+                                {/* Date */}
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold text-gray-400 block uppercase">Date Paid</label>
+                                  <input
+                                    type="date"
+                                    value={payDate}
+                                    onChange={(e) => setPayDate(e.target.value)}
+                                    className="px-2 py-1.5 text-xs block w-full rounded-md border border-gray-300 bg-white font-semibold"
+                                  />
+                                </div>
+
+                                {/* Notes */}
+                                <div className="space-y-1">
+                                  <label className="text-[9px] font-bold text-gray-400 block uppercase">Memo / Ref #</label>
+                                  <input
+                                    type="text"
+                                    placeholder="e.g. Deposit"
+                                    value={payNotes}
+                                    onChange={(e) => setPayNotes(e.target.value)}
+                                    className="px-2 py-1.5 text-xs block w-full rounded-md border border-gray-300 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="flex justify-end gap-1.5 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setShowAddPaymentForm(false);
+                                    setPayError("");
+                                  }}
+                                  className="px-2.5 py-1.5 bg-white border border-gray-300 text-gray-700 text-[10px] font-bold rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="submit"
+                                  className="px-3 py-1.5 bg-indigo-600 border border-indigo-600 text-white text-[10px] font-black rounded-lg cursor-pointer hover:bg-indigo-700 transition-colors shadow-2xs"
+                                >
+                                  Save Payment
+                                </button>
+                              </div>
+                            </form>
+                          )}
+                        </div>
+
+                        {/* Milestone Installments Quick-Mark Checklist */}
+                        <div className="border-t border-gray-150 pt-3 space-y-2">
+                          <span className="text-[9px] uppercase font-bold text-slate-500 tracking-wider block">Milestone Installments Checklist</span>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            {getPaymentMilestones(selectedAttendee.formData.selectedPackageId, selectedAttendee.formData.addDetroitJacket).map((m, mIdx) => {
+                              const hasMilestoneTx = transactions.some(tx => tx.notes === `${m.date} Milestone`);
+                              return (
+                                <button
+                                  key={mIdx}
+                                  type="button"
+                                  onClick={() => handleToggleMilestone(selectedAttendee, m.date, !hasMilestoneTx)}
+                                  className={`p-2 rounded-xl text-left border text-[10px] transition-all cursor-pointer ${
+                                    hasMilestoneTx 
+                                      ? "bg-emerald-50/60 border-emerald-250 text-emerald-800 font-extrabold" 
+                                      : "bg-slate-50/50 border-slate-150 text-slate-600 hover:bg-slate-50 font-semibold"
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between leading-none mb-1">
+                                    <span>{m.date}</span>
+                                    <span className="font-mono text-[10.5px]">${m.amount}</span>
+                                  </div>
+                                  <span className="text-[8.5px] font-medium block">
+                                    {hasMilestoneTx ? "✓ Paid Milestone" : "● Mark Paid (Zelle)"}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       </div>
                     );
