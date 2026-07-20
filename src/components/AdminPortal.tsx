@@ -158,6 +158,7 @@ export default function AdminPortal({
   const [selectedAttendee, setSelectedAttendee] = useState<HistoryEntry | null>(null);
   const [deleteConfirmRef, setDeleteConfirmRef] = useState<string | null>(null);
   const [copiedRef, setCopiedRef] = useState<string | null>(null);
+  const [copiedEmailType, setCopiedEmailType] = useState<string | null>(null);
   const [editingAttendee, setEditingAttendee] = useState<HistoryEntry | null>(null);
   const [editForm, setEditForm] = useState<OrderForm | null>(null);
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
@@ -326,6 +327,88 @@ If any details need adjustment, please let us know immediately. Looking forward 
 
 Best regards,
 BBI Homecoming Committee`;
+  };
+
+  const generatePaidInFullText = (attendee: HistoryEntry) => {
+    const pkg = PACKAGE_OPTIONS.find((p) => p.id === attendee.formData.selectedPackageId);
+    const packageName = pkg ? pkg.name : "Unknown Package";
+    const grandTotal = calculateGrandTotal(attendee.formData);
+    const shirtSize = attendee.formData.shirtSize;
+    let jacketSection = "";
+    if (attendee.formData.addDetroitJacket) {
+      jacketSection = `\n  • Custom Detroit Jacket: Size ${attendee.formData.jacketSize} (Line Name: "${attendee.formData.jacketLineName}", Line #: ${attendee.formData.jacketLineNumber})`;
+    }
+
+    return `Dear Brother ${attendee.formData.fullName.trim()},
+
+This is a receipt confirming that your registration for the BBI Homecoming Reunion 2026 is officially PAID IN FULL!
+
+We have updated your ledger and your balance is $0.00. Thank you for your prompt payments and support.
+
+[YOUR REGISTRATION DETAILS]
+  • Reference ID: ${attendee.ref}
+  • Selected Package: ${packageName}
+  • T-Shirt Size: ${shirtSize}${jacketSection}
+  • Total Paid: $${grandTotal.toLocaleString()}
+  • Balance Remaining: $0.00
+
+Thank you for your active participation. We look forward to welcoming you home to Detroit!
+
+Best regards,
+BBI Homecoming Committee`;
+  };
+
+  const generateBalanceDueText = (attendee: HistoryEntry) => {
+    const pkg = PACKAGE_OPTIONS.find((p) => p.id === attendee.formData.selectedPackageId);
+    const packageName = pkg ? pkg.name : "Unknown Package";
+    const grandTotal = calculateGrandTotal(attendee.formData);
+    const { totalPaid, balanceDue, transactions } = getAttendeePaymentStats(attendee);
+    const milestones = getPaymentMilestones(attendee.formData.selectedPackageId, attendee.formData.addDetroitJacket);
+
+    const paymentListText = transactions.length > 0 
+      ? transactions.map(tx => `  • $${tx.amount.toLocaleString()} paid on ${new Date(tx.date).toLocaleDateString()} via ${tx.method} (${tx.notes || "Partial Payment"})`).join("\n")
+      : "  • No payments recorded yet.";
+
+    const milestonesScheduleText = milestones.map(m => {
+      const hasMilestoneTx = transactions.some(tx => tx.notes === `${m.date} Milestone`);
+      return `  • ${m.date}: $${m.amount.toLocaleString()} - ${hasMilestoneTx ? "PAID" : "DUE"}`;
+    }).join("\n");
+
+    return `Dear Brother ${attendee.formData.fullName.trim()},
+
+This is a payment update regarding your registration for the BBI Homecoming Reunion 2026. 
+
+You have a remaining balance of $${balanceDue.toLocaleString()} on your registration. Below is a detailed breakdown of your payments to-date and the milestone installment schedule:
+
+[YOUR REGISTRATION DETAILS]
+  • Reference ID: ${attendee.ref}
+  • Selected Package: ${packageName}
+  • Total Registration Cost: $${grandTotal.toLocaleString()}
+
+[PAYMENTS RECORDED TO-DATE]
+${paymentListText}
+  • Total Amount Paid: $${totalPaid.toLocaleString()}
+  • Current Balance Due: $${balanceDue.toLocaleString()}
+
+[REMAINING MILESTONE SCHEDULE]
+${milestonesScheduleText}
+
+Please ensure payments are sent via Zelle to bbihomecoming@gmail.com (or your preferred payment method in coordination with the committee). 
+
+If you have any questions, please reply to this email. We look forward to welcoming you home to Detroit!
+
+Best regards,
+BBI Homecoming Committee`;
+  };
+
+  const handleCopyEmailText = (attendee: HistoryEntry, type: "paid_in_full" | "balance_due") => {
+    const text = type === "paid_in_full" ? generatePaidInFullText(attendee) : generateBalanceDueText(attendee);
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedEmailType(type);
+      setTimeout(() => setCopiedEmailType(null), 3000);
+    }).catch((err) => {
+      console.error("Failed to copy email body text:", err);
+    });
   };
 
   const handleCopyProfileText = (attendee: HistoryEntry) => {
@@ -1226,6 +1309,18 @@ BBI Homecoming Committee`;
         const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(recipientEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(emailBody)}`;
         const mailtoUrl = `mailto:${encodeURIComponent(recipientEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(emailBody)}`;
 
+        // Paid in Full Receipt Email
+        const pifSubject = `BBI Homecoming 2026: Paid In Full Receipt (${selectedAttendee.formData.fullName})`;
+        const pifBody = generatePaidInFullText(selectedAttendee);
+        const pifGmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(recipientEmail)}&su=${encodeURIComponent(pifSubject)}&body=${encodeURIComponent(pifBody)}`;
+        const pifMailtoUrl = `mailto:${encodeURIComponent(recipientEmail)}?subject=${encodeURIComponent(pifSubject)}&body=${encodeURIComponent(pifBody)}`;
+
+        // Balance & Due Dates Reminder Email
+        const balSubject = `BBI Homecoming 2026: Remaining Balance & Milestone Update (${selectedAttendee.formData.fullName})`;
+        const balBody = generateBalanceDueText(selectedAttendee);
+        const balGmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(recipientEmail)}&su=${encodeURIComponent(balSubject)}&body=${encodeURIComponent(balBody)}`;
+        const balMailtoUrl = `mailto:${encodeURIComponent(recipientEmail)}?subject=${encodeURIComponent(balSubject)}&body=${encodeURIComponent(balBody)}`;
+
         return (
           <div className="fixed inset-0 z-55 overflow-hidden" aria-labelledby="slide-over-title" role="dialog" aria-modal="true" id="registrant-slideover-container">
             <div className="absolute inset-0 overflow-hidden">
@@ -1322,6 +1417,115 @@ BBI Homecoming Committee`;
                           </>
                         )}
                       </button>
+                    </div>
+
+                    {/* Manual Email Dispatcher */}
+                    <div className="border-t border-gray-100 pt-4 space-y-3">
+                      <span className="text-[9.5px] uppercase font-black text-indigo-900 tracking-wider block">Manual Email Dispatcher</span>
+                      
+                      {/* Email 1: Paid in Full Receipt */}
+                      <div className="bg-emerald-50/50 border border-emerald-150 p-3 rounded-xl space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="font-bold text-emerald-950 text-[11px] flex items-center gap-1">
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            Paid in Full Receipt
+                          </span>
+                          <span className="text-[8px] bg-emerald-100 text-emerald-850 px-1.5 py-0.2 rounded-full font-black uppercase">Receipt</span>
+                        </div>
+                        <p className="text-[9.5px] text-emerald-805 leading-snug">
+                          Pre-populates an email receipt confirming registration balance is fully cleared ($0).
+                        </p>
+                        <div className="grid grid-cols-3 gap-1.5 pt-1">
+                          <a
+                            href={pifGmailUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-center gap-1 py-1.5 bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 rounded-md text-[10px] font-bold cursor-pointer transition-all text-center shadow-3xs"
+                            title="Draft with Gmail Web Client"
+                          >
+                            <Send className="w-3 h-3 text-rose-500" />
+                            <span>Gmail</span>
+                          </a>
+                          <a
+                            href={pifMailtoUrl}
+                            className="flex items-center justify-center gap-1 py-1.5 bg-white hover:bg-blue-50 text-brand-blue border border-blue-250 rounded-md text-[10px] font-bold cursor-pointer transition-all text-center shadow-3xs"
+                            title="Draft with native system mail client"
+                          >
+                            <Mail className="w-3 h-3 text-brand-blue" />
+                            <span>System</span>
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyEmailText(selectedAttendee, "paid_in_full")}
+                            className="flex items-center justify-center gap-1 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-md text-[10px] font-bold cursor-pointer transition-all shadow-3xs"
+                            title="Copy email body text to clipboard"
+                          >
+                            {copiedEmailType === "paid_in_full" ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                <span className="text-emerald-700">Copied</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5 text-slate-400" />
+                                <span>Copy</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Email 2: Balance & Due Dates Reminder */}
+                      <div className="bg-amber-50/50 border border-amber-150 p-3 rounded-xl space-y-2">
+                        <div className="flex justify-between items-center">
+                          <span className="font-bold text-amber-950 text-[11px] flex items-center gap-1">
+                            <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                            Balance & Due Dates
+                          </span>
+                          <span className="text-[8px] bg-amber-100 text-amber-850 px-1.5 py-0.2 rounded-full font-black uppercase">Invoice</span>
+                        </div>
+                        <p className="text-[9.5px] text-amber-855 leading-snug">
+                          Pre-populates a payment invoice with outstanding balance and upcoming milestone due dates.
+                        </p>
+                        <div className="grid grid-cols-3 gap-1.5 pt-1">
+                          <a
+                            href={balGmailUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center justify-center gap-1 py-1.5 bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 rounded-md text-[10px] font-bold cursor-pointer transition-all text-center shadow-3xs"
+                            title="Draft with Gmail Web Client"
+                          >
+                            <Send className="w-3 h-3 text-rose-500" />
+                            <span>Gmail</span>
+                          </a>
+                          <a
+                            href={balMailtoUrl}
+                            className="flex items-center justify-center gap-1 py-1.5 bg-white hover:bg-blue-50 text-brand-blue border border-blue-250 rounded-md text-[10px] font-bold cursor-pointer transition-all text-center shadow-3xs"
+                            title="Draft with native system mail client"
+                          >
+                            <Mail className="w-3 h-3 text-brand-blue" />
+                            <span>System</span>
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => handleCopyEmailText(selectedAttendee, "balance_due")}
+                            className="flex items-center justify-center gap-1 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-md text-[10px] font-bold cursor-pointer transition-all shadow-3xs"
+                            title="Copy email body text to clipboard"
+                          >
+                            {copiedEmailType === "balance_due" ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                <span className="text-emerald-700">Copied</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5 text-slate-400" />
+                                <span>Copy</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
                   {/* Homecoming Treasury Milestone Balance Sheet & Transaction Ledger */}
