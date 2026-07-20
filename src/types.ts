@@ -83,6 +83,18 @@ export const PACKAGE_OPTIONS: PackageOption[] = [
       "Chapter Donation Included"
     ],
     note: "Can't make it? Support the chapter from afar. Plus shipping costs apply."
+  },
+  {
+    id: "jacket-only",
+    name: "Custom Detroit Jacket Only (No Reunion Package)",
+    price: 0,
+    items: [
+      "Custom Carhartt-Style Detroit Jacket ($135 value)",
+      "Excludes BBI Homecoming Box (No T-shirt or Merch)",
+      "Excludes Full Event Access & Stepshow Tickets",
+      "Excludes Tailgate Food & Chapter Donation"
+    ],
+    note: "Select this option if you ONLY want to order the customized Detroit Jacket. Total cost is $135 (paid via installments)."
   }
 ];
 

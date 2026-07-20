@@ -15,13 +15,16 @@ export function getPaymentMilestones(packageId: string, addJacket: boolean): Pay
   const milestones: PaymentMilestone[] = [];
 
   // 1. July 19 Milestone (Common across all packages)
-  const july19Items: MilestoneItem[] = [
-    { name: "Box Printing", amount: 15, isDeposit: true },
-    { name: "Shirt", amount: 35, isDeposit: true },
-    { name: "Tumbler", amount: 15, isDeposit: true },
-    { name: "Rally Towel", amount: 5, isDeposit: true },
-    { name: "Engraved Whiskey Glass", amount: 30, isDeposit: true },
-  ];
+  const july19Items: MilestoneItem[] = [];
+  if (packageId !== "jacket-only") {
+    july19Items.push(
+      { name: "Box Printing", amount: 15, isDeposit: true },
+      { name: "Shirt", amount: 35, isDeposit: true },
+      { name: "Tumbler", amount: 15, isDeposit: true },
+      { name: "Rally Towel", amount: 5, isDeposit: true },
+      { name: "Engraved Whiskey Glass", amount: 30, isDeposit: true }
+    );
+  }
   if (addJacket) {
     july19Items.push({ name: "Jacket Optional (Deposit)", amount: 70, isDeposit: true });
   }

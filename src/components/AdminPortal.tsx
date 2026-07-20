@@ -259,7 +259,7 @@ export default function AdminPortal({
     const jacket = formData.addDetroitJacket ? 135 : 0;
     const total = base + jacket;
 
-    const packageDeposit = selectedPackage ? 100 : 0;
+    const packageDeposit = (selectedPackage && selectedPackage.id !== "jacket-only") ? 100 : 0;
     const jacketDeposit = formData.addDetroitJacket ? 70 : 0;
     const depositDue = packageDeposit + jacketDeposit;
     const balanceDue = total - depositDue;

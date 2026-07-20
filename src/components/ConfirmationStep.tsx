@@ -29,7 +29,7 @@ export default function ConfirmationStep({
   const grandTotal = basePackagePrice + footballTicketPrice + detroitJacketPrice;
 
   // Deposit calculations
-  const packageDeposit = selectedPackage ? 100 : 0;
+  const packageDeposit = (selectedPackage && selectedPackage.id !== "jacket-only") ? 100 : 0;
   const jacketDeposit = formData.addDetroitJacket ? 70 : 0;
   const totalDepositDue = packageDeposit + jacketDeposit;
   const remainingBalance = grandTotal - totalDepositDue;
@@ -166,14 +166,25 @@ export default function ConfirmationStep({
 
           {/* Box 2: Fulfillment & Coordination Profile */}
           <div className="bg-white rounded-xl border border-gray-100 p-5 space-y-4 shadow-2xs">
-            <div>
-              <span className="text-xs text-gray-400 font-bold uppercase tracking-wider block mb-1">
-                Core T-Shirt Size
-              </span>
-              <span className="inline-flex items-center justify-center text-xs font-black bg-blue-100 text-brand-blue border border-blue-200 px-3 py-1 rounded-sm">
-                SIZE {formData.shirtSize}
-              </span>
-            </div>
+            {formData.selectedPackageId !== "jacket-only" ? (
+              <div>
+                <span className="text-xs text-gray-400 font-bold uppercase tracking-wider block mb-1">
+                  Core T-Shirt Size
+                </span>
+                <span className="inline-flex items-center justify-center text-xs font-black bg-blue-100 text-brand-blue border border-blue-200 px-3 py-1 rounded-sm">
+                  SIZE {formData.shirtSize}
+                </span>
+              </div>
+            ) : (
+              <div>
+                <span className="text-xs text-gray-400 font-bold uppercase tracking-wider block mb-1">
+                  Order Type
+                </span>
+                <span className="inline-flex items-center justify-center text-[10px] font-black bg-amber-100 text-amber-850 border border-amber-200 px-2.5 py-1 rounded-sm uppercase">
+                  Custom Jacket Only
+                </span>
+              </div>
+            )}
 
             <div className="border-t border-gray-100 pt-3 space-y-3.5">
               <div>

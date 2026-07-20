@@ -206,7 +206,8 @@ export default function App() {
 
     if (step === 1) {
       // Step 2: Custom Sizing & Add-On customizer constraints
-      if (!formData.shirtSize) {
+      const requiresShirt = formData.selectedPackageId !== "jacket-only" && !(formData.selectedPackageId === "" && formData.addDetroitJacket);
+      if (requiresShirt && !formData.shirtSize) {
         stepErrors.shirtSize = "Core package t-shirt size is required.";
       }
 
@@ -233,6 +234,12 @@ export default function App() {
       // Step 3: Choose Package
       if (!formData.selectedPackageId) {
         stepErrors.selectedPackageId = "You must select exactly one homecoming package category.";
+      } else if (formData.selectedPackageId !== "jacket-only" && !formData.shirtSize) {
+        stepErrors.selectedPackageId = "The selected package includes a t-shirt. Please go back to Step 2 and select a t-shirt size.";
+      } else if (formData.selectedPackageId === "jacket-only") {
+        if (!formData.jacketSize || !formData.jacketCrossingYear.trim() || !formData.jacketLineName.trim() || !formData.jacketEntireLineName.trim() || !formData.jacketLineNumber.trim()) {
+          stepErrors.selectedPackageId = "Custom Detroit Jacket Only package requires jacket customization details. Please go back to Step 2 and enter your jacket details.";
+        }
       }
     }
 
@@ -702,7 +709,13 @@ export default function App() {
                 {activeStep === 2 && (
                   <PackageStep
                     selectedPackageId={formData.selectedPackageId}
-                    onSelect={(pkgId) => handleFormChange({ selectedPackageId: pkgId })}
+                    onSelect={(pkgId) => {
+                      if (pkgId === "jacket-only") {
+                        handleFormChange({ selectedPackageId: pkgId, addDetroitJacket: true });
+                      } else {
+                        handleFormChange({ selectedPackageId: pkgId });
+                      }
+                    }}
                     errors={errors}
                   />
                 )}

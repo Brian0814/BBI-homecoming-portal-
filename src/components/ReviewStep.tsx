@@ -22,7 +22,7 @@ export default function ReviewStep({ formData, onNavigateToStep }: ReviewStepPro
   const grandTotal = basePackagePrice + footballTicketPrice + detroitJacketPrice;
 
   // Deposit calculations
-  const packageDeposit = selectedPackage ? 100 : 0;
+  const packageDeposit = (selectedPackage && selectedPackage.id !== "jacket-only") ? 100 : 0;
   const jacketDeposit = formData.addDetroitJacket ? 70 : 0;
   const totalDepositDue = packageDeposit + jacketDeposit;
 
@@ -121,12 +121,14 @@ export default function ReviewStep({ formData, onNavigateToStep }: ReviewStepPro
             </button>
           </div>
           <div className="space-y-3.5 text-sm">
-            <div>
-              <span className="text-gray-400 block text-xs font-medium uppercase tracking-wider mb-1">Package T-Shirt Size</span>
-              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-extrabold uppercase bg-blue-100 text-brand-blue border border-blue-200">
-                Size {formData.shirtSize}
-              </span>
-            </div>
+            {formData.selectedPackageId !== "jacket-only" && (
+              <div>
+                <span className="text-gray-400 block text-xs font-medium uppercase tracking-wider mb-1">Package T-Shirt Size</span>
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-extrabold uppercase bg-blue-100 text-brand-blue border border-blue-200">
+                  Size {formData.shirtSize}
+                </span>
+              </div>
+            )}
             <div>
               <span className="text-gray-400 block text-xs font-medium uppercase tracking-wider mb-1">Special Committee Requests</span>
               <div className="bg-slate-50 border border-slate-100 p-3 rounded-lg text-xs leading-relaxed text-gray-700 min-h-[50px]">

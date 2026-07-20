@@ -33,10 +33,16 @@ export default function DetailsStep({
         {/* Core Shirt Size Selector */}
         <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 shadow-xs">
           <label htmlFor="shirtSize" className="block text-sm font-extrabold text-slate-900 uppercase tracking-widest text-[11px] mb-1">
-            Shirt Size Selection <span className="text-red-500">*</span>
+            Shirt Size Selection {formData.selectedPackageId === "jacket-only" ? (
+              <span className="text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-sm normal-case font-semibold text-[9.5px] tracking-normal ml-1">Optional (Not included in Jacket-Only orders)</span>
+            ) : (
+              <span className="text-red-500">*</span>
+            )}
           </label>
           <p className="text-xs text-slate-500 mb-3.5 leading-relaxed">
-            The selected size will apply directly to the box shirt included in your core homecoming bag package.
+            {formData.selectedPackageId === "jacket-only"
+              ? "You've selected Jacket-Only. A package shirt is not included in this order category."
+              : "The selected size will apply directly to the box shirt included in your core homecoming bag package."}
           </p>
           <div className="relative rounded-md shadow-xs max-w-xs">
             <select
@@ -111,7 +117,9 @@ export default function DetailsStep({
             {/* Carhartt Style Jacket Option Card */}
             <label
               htmlFor="addDetroitJacket"
-              className={`relative flex items-start gap-4 rounded-xl border p-4 shadow-xs cursor-pointer transition-all select-none hover:bg-slate-50 ${
+              className={`relative flex items-start gap-4 rounded-xl border p-4 shadow-xs transition-all select-none hover:bg-slate-50 ${
+                formData.selectedPackageId === "jacket-only" ? "cursor-not-allowed" : "cursor-pointer"
+              } ${
                 formData.addDetroitJacket
                   ? "border-brand-blue bg-blue-50/40 ring-2 ring-brand-blue/10"
                   : "border-gray-200 bg-white"
@@ -123,8 +131,9 @@ export default function DetailsStep({
                   name="addDetroitJacket"
                   type="checkbox"
                   checked={formData.addDetroitJacket}
+                  disabled={formData.selectedPackageId === "jacket-only"}
                   onChange={(e) => onChange({ addDetroitJacket: e.target.checked })}
-                  className="h-4.5 w-4.5 rounded-sm border-gray-300 text-brand-blue focus:ring-brand-blue"
+                  className="h-4.5 w-4.5 rounded-sm border-gray-300 text-brand-blue focus:ring-brand-blue disabled:opacity-75 disabled:cursor-not-allowed"
                 />
               </div>
               <div className="flex-1 text-sm/6">
@@ -133,11 +142,13 @@ export default function DetailsStep({
                     <ShoppingBag className="w-4 h-4 text-brand-blue" /> Carhartt Style Jacket
                   </span>
                   <span className="font-mono font-black text-brand-blue text-[13px] bg-white border border-gray-200 px-2 py-0.5 rounded-md shadow-2xs">
-                    +$135
+                    {formData.selectedPackageId === "jacket-only" ? "$135 (Included)" : "+$135"}
                   </span>
                 </div>
                 <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-                  Premium heavyweight wool with genuine chenille embroidery details. Requires specific crossing details on next section.
+                  {formData.selectedPackageId === "jacket-only"
+                    ? "Premium heavyweight wool with chenille embroidery. Required and locked because you selected the Jacket Only package."
+                    : "Premium heavyweight wool with genuine chenille embroidery details. Requires specific crossing details on next section."}
                 </p>
               </div>
             </label>
