@@ -48,7 +48,7 @@ export function getPaymentMilestones(packageId: string, addJacket: boolean): Pay
   }
 
   if (addJacket) {
-    august15Items.push({ name: "Jacket Optional (Remaining)", amount: 75 });
+    august15Items.push({ name: "Jacket Optional (Remaining)", amount: 65 });
   }
 
   const augustTotal = august15Items.reduce((sum, item) => sum + item.amount, 0);
