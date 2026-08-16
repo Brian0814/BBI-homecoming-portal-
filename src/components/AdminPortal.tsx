@@ -12,6 +12,7 @@ import {
   Send, Copy, Check, Edit, AlertCircle
 } from "lucide-react";
 import { getPaymentMilestones } from "../lib/paymentUtils";
+import { MassEmailModal } from "./MassEmailModal";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { collection, query, onSnapshot, doc, setDoc, deleteDoc, getDoc } from "firebase/firestore";
 
@@ -163,6 +164,7 @@ export default function AdminPortal({
   const [editForm, setEditForm] = useState<OrderForm | null>(null);
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [isMassEmailModalOpen, setIsMassEmailModalOpen] = useState(false);
 
   // Custom Payment Form States
   const [payAmount, setPayAmount] = useState("");
@@ -871,6 +873,18 @@ BBI Homecoming Committee`;
         <div className="flex flex-wrap items-center gap-2 sm:self-center">
           <button
             type="button"
+            onClick={() => setIsMassEmailModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-brand-blue to-indigo-700 hover:from-brand-blue-dark hover:to-indigo-800 text-white font-extrabold text-xs shadow-md hover:shadow-lg cursor-pointer transition-all ring-2 ring-brand-blue/20"
+            title="Personalize and mass email all registered attendees with merge tokens"
+          >
+            <Mail className="w-3.5 h-3.5 text-blue-100" />
+            <span>Mass Email & Mail Merge</span>
+            <span className="bg-white/20 text-white text-[10px] px-2 py-0.5 rounded-full font-mono font-bold">
+              {history.length}
+            </span>
+          </button>
+          <button
+            type="button"
             onClick={handleExportCSV}
             className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-gray-700 font-bold text-xs shadow-xs hover:bg-gray-50 cursor-pointer transition-all"
           >
@@ -879,7 +893,7 @@ BBI Homecoming Committee`;
           <button
             type="button"
             onClick={handlePrintReport}
-            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-brand-blue text-white font-bold text-xs shadow-md hover:bg-brand-blue-dark cursor-pointer transition-all"
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-800 text-white font-bold text-xs shadow-md hover:bg-slate-900 cursor-pointer transition-all"
           >
             <Printer className="w-3.5 h-3.5" /> Printable Report (PDF)
           </button>
@@ -1136,19 +1150,30 @@ BBI Homecoming Committee`;
               Found {processedRecords.length} registrants • Click a member to slide over detailed embroidery, sizing & address sheets.
             </p>
           </div>
-          <div className="flex items-center gap-2 text-[10px] text-gray-400 font-bold bg-white border border-gray-200 p-1.5 px-3 rounded-lg flex-shrink-0 self-start sm:self-auto shadow-3xs">
-            <span>Sort By:</span>
-            <button onClick={() => toggleSort("date")} className={`hover:underline cursor-pointer flex items-center gap-0.5 ${activeSortField === "date" ? "text-brand-blue" : ""}`}>
-              Date {activeSortField === "date" && (sortDirection === "asc" ? "▲" : "▼")}
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsMassEmailModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[10.5px] font-bold cursor-pointer transition-all shadow-3xs"
+              title="Open Mail Merge studio for all attendees in this list"
+            >
+              <Mail className="w-3 h-3 text-indigo-600" />
+              <span>Mass Email Roster</span>
             </button>
-            <span className="text-gray-300">|</span>
-            <button onClick={() => toggleSort("name")} className={`hover:underline cursor-pointer flex items-center gap-0.5 ${activeSortField === "name" ? "text-brand-blue" : ""}`}>
-              Name {activeSortField === "name" && (sortDirection === "asc" ? "▲" : "▼")}
-            </button>
-            <span className="text-gray-300">|</span>
-            <button onClick={() => toggleSort("total")} className={`hover:underline cursor-pointer flex items-center gap-0.5 ${activeSortField === "total" ? "text-brand-blue" : ""}`}>
-              Total {activeSortField === "total" && (sortDirection === "asc" ? "▲" : "▼")}
-            </button>
+            <div className="flex items-center gap-2 text-[10px] text-gray-400 font-bold bg-white border border-gray-200 p-1.5 px-3 rounded-lg flex-shrink-0 self-start sm:self-auto shadow-3xs">
+              <span>Sort By:</span>
+              <button onClick={() => toggleSort("date")} className={`hover:underline cursor-pointer flex items-center gap-0.5 ${activeSortField === "date" ? "text-brand-blue" : ""}`}>
+                Date {activeSortField === "date" && (sortDirection === "asc" ? "▲" : "▼")}
+              </button>
+              <span className="text-gray-300">|</span>
+              <button onClick={() => toggleSort("name")} className={`hover:underline cursor-pointer flex items-center gap-0.5 ${activeSortField === "name" ? "text-brand-blue" : ""}`}>
+                Name {activeSortField === "name" && (sortDirection === "asc" ? "▲" : "▼")}
+              </button>
+              <span className="text-gray-300">|</span>
+              <button onClick={() => toggleSort("total")} className={`hover:underline cursor-pointer flex items-center gap-0.5 ${activeSortField === "total" ? "text-brand-blue" : ""}`}>
+                Total {activeSortField === "total" && (sortDirection === "asc" ? "▲" : "▼")}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -2391,6 +2416,13 @@ BBI Homecoming Committee`;
           </div>
         </div>
       )}
+
+      {/* Mass Email & Mail Merge Studio Modal */}
+      <MassEmailModal
+        isOpen={isMassEmailModalOpen}
+        onClose={() => setIsMassEmailModalOpen(false)}
+        allAttendees={history}
+      />
     </div>
   );
 }

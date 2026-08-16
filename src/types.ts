@@ -105,3 +105,27 @@ export const STATE_LIST = [
   "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", 
   "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"
 ];
+
+export interface PaymentTransaction {
+  id: string;
+  amount: number;
+  date: string;
+  method: string;
+  notes?: string;
+}
+
+export interface HistoryEntry {
+  ref: string;
+  date: string;
+  formData: OrderForm;
+  payments?: {
+    [dateKey: string]: {
+      paid: boolean;
+      paidAt?: string | null;
+      method?: string | null;
+      amount?: number;
+    };
+  };
+  paymentTransactions?: PaymentTransaction[];
+}
+
