@@ -11,7 +11,13 @@ import {
   MapPin, Phone, Mail, FileText, ArrowLeft, Ticket, ShoppingBag, Eye, Calendar, X,
   Send, Copy, Check, Edit, AlertCircle
 } from "lucide-react";
-import { getPaymentMilestones } from "../lib/paymentUtils";
+import { 
+  getPaymentMilestones, 
+  getAttendeeTransactions, 
+  getAttendeePaymentStats, 
+  getLocalDateString, 
+  formatDisplayDate 
+} from "../lib/paymentUtils";
 import { MassEmailModal } from "./MassEmailModal";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { collection, query, onSnapshot, doc, setDoc, deleteDoc, getDoc } from "firebase/firestore";
@@ -169,7 +175,7 @@ export default function AdminPortal({
   // Custom Payment Form States
   const [payAmount, setPayAmount] = useState("");
   const [payMethod, setPayMethod] = useState("Zelle");
-  const [payDate, setPayDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [payDate, setPayDate] = useState(() => getLocalDateString());
   const [payNotes, setPayNotes] = useState("");
   const [showAddPaymentForm, setShowAddPaymentForm] = useState(false);
   const [payError, setPayError] = useState("");
@@ -368,7 +374,7 @@ BBI Homecoming Committee`;
     const milestones = getPaymentMilestones(attendee.formData.selectedPackageId, attendee.formData.addDetroitJacket);
 
     const paymentListText = transactions.length > 0 
-      ? transactions.map(tx => `  • $${tx.amount.toLocaleString()} paid on ${new Date(tx.date).toLocaleDateString()} via ${tx.method} (${tx.notes || "Partial Payment"})`).join("\n")
+      ? transactions.map(tx => `  • $${tx.amount.toLocaleString()} paid on ${formatDisplayDate(tx.date)} via ${tx.method} (${tx.notes || "Partial Payment"})`).join("\n")
       : "  • No payments recorded yet.";
 
     const milestonesScheduleText = milestones.map(m => {
@@ -521,7 +527,7 @@ BBI Homecoming Committee`;
           const newTx: PaymentTransaction = {
             id: `tx-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
             amount: milestoneAmount,
-            date: new Date().toISOString().split('T')[0],
+            date: getLocalDateString(),
             method: method,
             notes: `${milestoneDate} Milestone`
           };
@@ -578,7 +584,7 @@ BBI Homecoming Committee`;
       const newTx: PaymentTransaction = {
         id: `tx-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
         amount: Number(amount) || 0,
-        date: date || new Date().toISOString().split('T')[0],
+        date: date || getLocalDateString(),
         method: method || "Zelle",
         notes: notes.trim()
       };
@@ -754,62 +760,6 @@ BBI Homecoming Committee`;
       setActiveSortField(field);
       setSortDirection("desc");
     }
-  };
-
-  const getAttendeeTransactions = (item: HistoryEntry): PaymentTransaction[] => {
-    const txs: PaymentTransaction[] = [];
-    if (item.paymentTransactions && Array.isArray(item.paymentTransactions)) {
-      txs.push(...item.paymentTransactions);
-    } else {
-      // Create transactions from legacy milestone payments on-the-fly
-      const milestones = getPaymentMilestones(item.formData.selectedPackageId, item.formData.addDetroitJacket);
-      milestones.forEach((m, idx) => {
-        if (item.payments?.[m.date]?.paid) {
-          txs.push({
-            id: `legacy-${idx}-${item.ref}`,
-            amount: item.payments[m.date].amount || m.amount || 0,
-            date: item.payments[m.date].paidAt || item.date || new Date().toISOString(),
-            method: item.payments[m.date].method || "Zelle",
-            notes: `${m.date} Milestone`
-          });
-        }
-      });
-    }
-    return txs;
-  };
-
-  // Payment calculations per attendee helper
-  const getAttendeePaymentStats = (item: HistoryEntry) => {
-    const txs = getAttendeeTransactions(item);
-    const grandTotal = calculateGrandTotal(item.formData);
-    const totalPaid = txs.reduce((sum, tx) => sum + (tx.amount || 0), 0);
-    const balanceDue = Math.max(0, grandTotal - totalPaid);
-    
-    let statusLabel = "Unpaid";
-    let statusColor = "bg-red-50 text-red-700 border-red-200";
-    
-    if (totalPaid === 0) {
-      statusLabel = "Unpaid";
-      statusColor = "bg-red-50/50 text-red-650 border-red-150";
-    } else if (balanceDue <= 0.01) {
-      statusLabel = "Paid in Full";
-      statusColor = "bg-emerald-50 text-emerald-800 border-emerald-250";
-    } else {
-      const selectedPackage = PACKAGE_OPTIONS.find((pkg) => pkg.id === item.formData.selectedPackageId);
-      const packageDeposit = selectedPackage ? 100 : 0;
-      const jacketDeposit = item.formData.addDetroitJacket ? 70 : 0;
-      const requiredDeposit = packageDeposit + jacketDeposit;
-      
-      if (totalPaid >= requiredDeposit) {
-        statusLabel = "Deposit Paid";
-        statusColor = "bg-blue-50 text-brand-blue border-blue-250";
-      } else {
-        statusLabel = "Partially Paid";
-        statusColor = "bg-amber-50 text-amber-800 border-amber-250";
-      }
-    }
-    
-    return { totalPaid, balanceDue, statusLabel, statusColor, transactions: txs };
   };
 
   // Statistics summaries calculations
@@ -1572,7 +1522,7 @@ BBI Homecoming Committee`;
                       setPayAmount("");
                       setPayNotes("");
                       setPayMethod("Zelle");
-                      setPayDate(new Date().toISOString().split("T")[0]);
+                      setPayDate(getLocalDateString());
                       setShowAddPaymentForm(false);
                     };
 
@@ -1644,7 +1594,7 @@ BBI Homecoming Committee`;
                                       )}
                                     </div>
                                     <span className="text-[9px] text-gray-400 block">
-                                      {new Date(tx.date).toLocaleDateString()}
+                                      {formatDisplayDate(tx.date)}
                                     </span>
                                   </div>
 
@@ -1675,6 +1625,7 @@ BBI Homecoming Committee`;
                               onClick={() => {
                                 setShowAddPaymentForm(true);
                                 setPayAmount(balanceDue > 0 ? balanceDue.toString() : "");
+                                setPayDate(getLocalDateString());
                               }}
                               className="w-full py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-250 rounded-xl text-[10.5px] font-bold cursor-pointer transition-colors shadow-2xs text-center flex items-center justify-center gap-1.5"
                             >

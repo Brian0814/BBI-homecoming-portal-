@@ -99,6 +99,28 @@ export function getPaymentMilestones(packageId: string, addJacket: boolean): Pay
 
 import { OrderForm, HistoryEntry, PaymentTransaction, PACKAGE_OPTIONS } from "../types";
 
+export function getLocalDateString(d: Date = new Date()): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function formatDisplayDate(dateStr: string | undefined | null): string {
+  if (!dateStr) return "";
+  // Check if it matches YYYY-MM-DD (e.g. from date input or getLocalDateString)
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+    const [year, month, day] = dateStr.split("-").map(Number);
+    // Construct local Date at local midnight to avoid UTC offset shifting the day
+    const localDate = new Date(year, month - 1, day);
+    return localDate.toLocaleDateString();
+  }
+  // If it's a full ISO string or other format, parse and format
+  const parsed = new Date(dateStr);
+  if (isNaN(parsed.getTime())) return dateStr;
+  return parsed.toLocaleDateString();
+}
+
 export function calculateAttendeeGrandTotal(formData: OrderForm): number {
   const selectedPackage = PACKAGE_OPTIONS.find((pkg) => pkg.id === formData.selectedPackageId);
   const base = selectedPackage?.price || 0;
@@ -176,7 +198,7 @@ export function resolveMailMergeTokens(template: string, attendee: HistoryEntry)
 
   const transactions = stats.transactions;
   const paymentsList = transactions.length > 0
-    ? transactions.map(tx => `  • $${tx.amount.toLocaleString()} paid on ${new Date(tx.date).toLocaleDateString()} via ${tx.method} (${tx.notes || "Payment"})`).join("\n")
+    ? transactions.map(tx => `  • $${tx.amount.toLocaleString()} paid on ${formatDisplayDate(tx.date)} via ${tx.method} (${tx.notes || "Payment"})`).join("\n")
     : "  • No payments recorded to date.";
 
   const milestones = getPaymentMilestones(attendee.formData.selectedPackageId, attendee.formData.addDetroitJacket);
