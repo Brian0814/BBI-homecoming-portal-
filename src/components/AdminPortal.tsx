@@ -9,7 +9,7 @@ import {
   Users, Trash2, Search, Download, Printer, ArrowUpDown, ChevronDown, 
   Layers, CreditCard, Sparkles, Filter, MoreHorizontal, ShoppingCart, 
   MapPin, Phone, Mail, FileText, ArrowLeft, Ticket, ShoppingBag, Eye, Calendar, X,
-  Send, Copy, Check, Edit, AlertCircle
+  Send, Copy, Check, Edit, AlertCircle, ArrowLeftRight, PackageCheck, Package, RefreshCw, AlertTriangle
 } from "lucide-react";
 import { 
   getPaymentMilestones, 
@@ -179,6 +179,14 @@ export default function AdminPortal({
   const [payNotes, setPayNotes] = useState("");
   const [showAddPaymentForm, setShowAddPaymentForm] = useState(false);
   const [payError, setPayError] = useState("");
+
+  // Dedicated Package Change Modal State
+  const [packageChangeAttendee, setPackageChangeAttendee] = useState<HistoryEntry | null>(null);
+  const [targetPackageId, setTargetPackageId] = useState<string>("");
+  const [targetAddJacket, setTargetAddJacket] = useState<boolean>(false);
+  const [isSavingPackageChange, setIsSavingPackageChange] = useState<boolean>(false);
+  const [packageChangeError, setPackageChangeError] = useState<string | null>(null);
+  const [packageChangeToast, setPackageChangeToast] = useState<{ title: string; message: string } | null>(null);
 
   // Load history with real-time Firestore sync + local fallback failsafe
   useEffect(() => {
@@ -508,6 +516,99 @@ BBI Homecoming Committee`;
       handleFirestoreError(error, OperationType.WRITE, `registrations/${editingAttendee.ref}`);
     } finally {
       setIsSavingEdit(false);
+    }
+  };
+
+  // Open dedicated package change modal
+  const handleOpenChangePackage = (attendee: HistoryEntry) => {
+    setPackageChangeAttendee(attendee);
+    setTargetPackageId(attendee.formData.selectedPackageId);
+    setTargetAddJacket(Boolean(attendee.formData.addDetroitJacket));
+    setPackageChangeError(null);
+  };
+
+  // Save package change and recalculate totals/balances
+  const handleSavePackageChange = async () => {
+    if (!packageChangeAttendee || !targetPackageId) return;
+    setIsSavingPackageChange(true);
+    setPackageChangeError(null);
+
+    try {
+      const willHaveJacket = targetPackageId === "jacket-only" ? true : targetAddJacket;
+      
+      const updatedFormData: OrderForm = {
+        ...packageChangeAttendee.formData,
+        selectedPackageId: targetPackageId,
+        addDetroitJacket: willHaveJacket,
+        // Ensure default jacket details if jacket is newly enabled
+        jacketSize: willHaveJacket 
+          ? (packageChangeAttendee.formData.jacketSize || packageChangeAttendee.formData.shirtSize || "L") 
+          : packageChangeAttendee.formData.jacketSize,
+        jacketCrossingYear: willHaveJacket 
+          ? (packageChangeAttendee.formData.jacketCrossingYear || "SPR 26") 
+          : packageChangeAttendee.formData.jacketCrossingYear,
+        jacketLineName: willHaveJacket 
+          ? (packageChangeAttendee.formData.jacketLineName || "Alumni Brother") 
+          : packageChangeAttendee.formData.jacketLineName,
+        jacketEntireLineName: willHaveJacket 
+          ? (packageChangeAttendee.formData.jacketEntireLineName || "BBI Chapter") 
+          : packageChangeAttendee.formData.jacketEntireLineName,
+        jacketLineNumber: willHaveJacket 
+          ? (packageChangeAttendee.formData.jacketLineNumber || "1") 
+          : packageChangeAttendee.formData.jacketLineNumber,
+      };
+
+      const updatedEntry: HistoryEntry = {
+        ...packageChangeAttendee,
+        formData: updatedFormData
+      };
+
+      // 1. Update Firestore
+      await setDoc(doc(db, "registrations", packageChangeAttendee.ref), updatedEntry);
+
+      // 2. Update local storage fallback
+      try {
+        const saved = localStorage.getItem("bbi_homecoming_2026_history");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            const index = parsed.findIndex((x) => x.ref === packageChangeAttendee.ref);
+            if (index !== -1) {
+              parsed[index] = updatedEntry;
+              localStorage.setItem("bbi_homecoming_2026_history", JSON.stringify(parsed));
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Local storage fallback sync failed:", e);
+      }
+
+      // 3. Update local states immediately
+      setHistory(prev => prev.map(item => item.ref === updatedEntry.ref ? updatedEntry : item));
+      if (selectedAttendee && selectedAttendee.ref === updatedEntry.ref) {
+        setSelectedAttendee(updatedEntry);
+      }
+
+      const newPkg = PACKAGE_OPTIONS.find(p => p.id === targetPackageId);
+      const newTotal = calculateGrandTotal(updatedFormData);
+      const { totalPaid, balanceDue } = getAttendeePaymentStats(updatedEntry);
+
+      setPackageChangeToast({
+        title: "Package Updated Successfully",
+        message: `${packageChangeAttendee.formData.fullName} switched to ${newPkg?.name || targetPackageId}. New total: $${newTotal.toLocaleString()}, Paid: $${totalPaid.toLocaleString()}, Balance owed: $${balanceDue.toLocaleString()}.`
+      });
+
+      setTimeout(() => {
+        setPackageChangeToast(null);
+      }, 5000);
+
+      setPackageChangeAttendee(null);
+    } catch (error) {
+      console.error("Failed to update registration package in Firestore:", error);
+      handleFirestoreError(error, OperationType.WRITE, `registrations/${packageChangeAttendee.ref}`);
+      setPackageChangeError("Failed to update package in Firestore. Please verify your connection and try again.");
+    } finally {
+      setIsSavingPackageChange(false);
     }
   };
 
@@ -1166,7 +1267,20 @@ BBI Homecoming Committee`;
                       {/* Reg Package type */}
                       <td className="px-6 py-4 hidden sm:table-cell">
                         <p className="font-bold text-slate-800 text-[12px]">{pkg?.name || "None Chosen"}</p>
-                        <p className="text-[10px] text-gray-400 font-bold mt-0.5">{item.formData.shirtSize ? `Size ${item.formData.shirtSize} T-Shirt` : ""}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[10px] text-gray-400 font-bold">{item.formData.shirtSize ? `Size ${item.formData.shirtSize} T-Shirt` : ""}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenChangePackage(item);
+                            }}
+                            className="text-[10px] font-bold text-brand-blue hover:text-brand-blue-dark hover:underline flex items-center gap-0.5 cursor-pointer"
+                            title="Change package for this attendee"
+                          >
+                            <ArrowLeftRight className="w-2.5 h-2.5" /> Change
+                          </button>
+                        </div>
                       </td>
 
                       {/* Add-on badges */}
@@ -1233,6 +1347,14 @@ BBI Homecoming Committee`;
                           className="px-2.5 py-1.5 rounded-lg bg-brand-blue hover:bg-brand-blue-dark text-white font-extrabold text-[10.5px] cursor-pointer shadow-xs transition-all"
                         >
                           View Profile
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenChangePackage(item)}
+                          className="p-1.5 rounded-lg hover:bg-indigo-50 text-gray-500 hover:text-indigo-600 cursor-pointer transition-colors inline-flex items-center justify-center align-middle border border-transparent hover:border-indigo-200"
+                          title="Change registration package"
+                        >
+                          <ArrowLeftRight className="w-3.5 h-3.5" />
                         </button>
                         <button
                           type="button"
@@ -1350,6 +1472,66 @@ BBI Homecoming Committee`;
                         <span className="select-all">{selectedAttendee.formData.phone}</span>
                       </p>
                     </div>
+
+                    {/* Active Registration Package Card */}
+                    {(() => {
+                      const pkg = PACKAGE_OPTIONS.find((p) => p.id === selectedAttendee.formData.selectedPackageId);
+                      const pkgTotal = calculateGrandTotal(selectedAttendee.formData);
+                      return (
+                        <div className="border-t border-gray-100 pt-4 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9.5px] uppercase font-black text-indigo-900 tracking-wider">
+                              Registration Package
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleOpenChangePackage(selectedAttendee)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-[10.5px] font-bold cursor-pointer transition-colors shadow-3xs"
+                              title="Change package for this attendee"
+                            >
+                              <ArrowLeftRight className="w-3 h-3 text-indigo-600" />
+                              <span>Change Package</span>
+                            </button>
+                          </div>
+
+                          <div className="bg-gradient-to-br from-slate-50 to-indigo-50/40 border border-slate-200 rounded-xl p-3.5 space-y-2.5 shadow-3xs">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <h5 className="font-extrabold text-slate-900 text-xs leading-snug">
+                                  {pkg?.name || "Unknown Package"}
+                                </h5>
+                                <p className="text-[10px] text-gray-500 mt-0.5">
+                                  Base Package: <span className="font-semibold text-slate-700 font-mono">${pkg?.price || 0}</span>
+                                  {selectedAttendee.formData.addDetroitJacket && (
+                                    <> • Detroit Jacket: <span className="font-semibold text-slate-700 font-mono">+$135</span></>
+                                  )}
+                                </p>
+                              </div>
+                              <span className="font-mono text-xs font-black text-indigo-950 bg-indigo-100/70 border border-indigo-200 px-2 py-0.5 rounded-md">
+                                ${pkgTotal}
+                              </span>
+                            </div>
+
+                            {/* Inclusions summary badges */}
+                            <div className="flex flex-wrap gap-1">
+                              <span className="text-[9px] bg-white border border-slate-200 text-slate-700 px-2 py-0.5 rounded-sm font-semibold">
+                                Shirt Size {selectedAttendee.formData.shirtSize || "Not Selected"}
+                              </span>
+                              {selectedAttendee.formData.addDetroitJacket && (
+                                <span className="text-[9px] bg-indigo-50 border border-indigo-200 text-indigo-800 px-2 py-0.5 rounded-sm font-bold flex items-center gap-0.5">
+                                  <ShoppingBag className="w-2.5 h-2.5 text-indigo-600" /> Jacket ({selectedAttendee.formData.jacketSize || "Custom"})
+                                </span>
+                              )}
+                              {selectedAttendee.formData.addFootballTicket && (
+                                <span className="text-[9px] bg-emerald-50 border border-emerald-200 text-emerald-800 px-2 py-0.5 rounded-sm font-bold flex items-center gap-0.5">
+                                  <Ticket className="w-2.5 h-2.5 text-emerald-600" /> Game RSVP
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {/* Quick Communication Suite */}
                     <div className="border-t border-gray-100 pt-4 space-y-2.5">
@@ -1831,6 +2013,15 @@ BBI Homecoming Committee`;
                 <div className="border-t border-gray-100 p-4.5 bg-slate-50 flex items-center justify-end gap-2.5 flex-shrink-0">
                   <button
                     type="button"
+                    onClick={() => handleOpenChangePackage(selectedAttendee)}
+                    className="flex items-center gap-1.5 px-3 py-2 border border-indigo-200 text-indigo-700 rounded-lg bg-white hover:bg-indigo-50 text-[11px] font-bold cursor-pointer transition-colors shadow-2xs"
+                    title="Switch or upgrade registration package"
+                  >
+                    <ArrowLeftRight className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Change Package</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => handleStartEdit(selectedAttendee)}
                     className="flex items-center gap-1.5 px-3 py-2 border border-blue-200 text-brand-blue rounded-lg bg-white hover:bg-blue-50 text-[11px] font-bold cursor-pointer transition-colors shadow-2xs"
                   >
@@ -2040,6 +2231,16 @@ BBI Homecoming Committee`;
                         </option>
                       ))}
                     </select>
+                    {editingAttendee && (() => {
+                      const previewTotal = calculateGrandTotal(editForm);
+                      const paid = getAttendeePaymentStats(editingAttendee).totalPaid;
+                      const previewBal = Math.max(0, previewTotal - paid);
+                      return (
+                        <p className="text-[9.5px] text-indigo-750 font-semibold mt-1 bg-indigo-50/60 px-2 py-1 rounded-md border border-indigo-150">
+                          New Total: <strong className="font-mono">${previewTotal}</strong> • Paid: <strong className="font-mono">${paid}</strong> • New Balance: <strong className="font-mono text-indigo-900">${previewBal}</strong>
+                        </p>
+                      );
+                    })()}
                   </div>
                   <div>
                     <label className="block text-[10px] uppercase font-black tracking-wider text-gray-500 mb-1">
@@ -2365,6 +2566,323 @@ BBI Homecoming Committee`;
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Dedicated Change Package Modal */}
+      {packageChangeAttendee && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 overflow-y-auto animate-in fade-in duration-150">
+          <div className="max-w-2xl w-full bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-auto flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-900 text-white p-5 sm:p-6 relative flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setPackageChangeAttendee(null);
+                  setPackageChangeError(null);
+                }}
+                className="absolute top-4 right-4 text-white/70 hover:text-white p-1.5 rounded-full hover:bg-white/10 transition-colors cursor-pointer"
+                title="Close modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <div className="flex items-center gap-2.5">
+                <span className="p-2 bg-indigo-500/20 border border-indigo-400/30 rounded-xl text-indigo-300">
+                  <ArrowLeftRight className="w-5 h-5" />
+                </span>
+                <div>
+                  <h3 className="font-display font-black text-lg sm:text-xl text-white tracking-tight">
+                    Change Registration Package
+                  </h3>
+                  <p className="text-xs text-indigo-200 mt-0.5">
+                    Attendee: <strong className="text-white">{packageChangeAttendee.formData.fullName}</strong> • Ref #{packageChangeAttendee.ref}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Scrollable Body */}
+            <div className="p-5 sm:p-6 overflow-y-auto space-y-6 flex-1 text-xs">
+              {packageChangeError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+                  <p className="font-semibold">{packageChangeError}</p>
+                </div>
+              )}
+
+              {/* Financial Recalculation Impact Box */}
+              {(() => {
+                const currentPkg = PACKAGE_OPTIONS.find((p) => p.id === packageChangeAttendee.formData.selectedPackageId);
+                const currentGrandTotal = calculateGrandTotal(packageChangeAttendee.formData);
+                const stats = getAttendeePaymentStats(packageChangeAttendee);
+
+                const willHaveJacket = targetPackageId === "jacket-only" ? true : targetAddJacket;
+                const previewFormData: OrderForm = {
+                  ...packageChangeAttendee.formData,
+                  selectedPackageId: targetPackageId,
+                  addDetroitJacket: willHaveJacket
+                };
+                const targetPkg = PACKAGE_OPTIONS.find((p) => p.id === targetPackageId);
+                const newGrandTotal = calculateGrandTotal(previewFormData);
+                const newBalanceDue = Math.max(0, newGrandTotal - stats.totalPaid);
+                const priceDiff = newGrandTotal - currentGrandTotal;
+                const isOverpaid = stats.totalPaid > newGrandTotal;
+                const creditAmount = isOverpaid ? stats.totalPaid - newGrandTotal : 0;
+
+                return (
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-600 flex items-center gap-1.5">
+                        <RefreshCw className="w-3.5 h-3.5 text-indigo-600" />
+                        Live Financial Recalculation
+                      </span>
+                      {priceDiff > 0 ? (
+                        <span className="text-[9.5px] font-extrabold uppercase px-2 py-0.5 bg-amber-100 text-amber-900 border border-amber-250 rounded-md">
+                          +${priceDiff} Upgrade
+                        </span>
+                      ) : priceDiff < 0 ? (
+                        <span className="text-[9.5px] font-extrabold uppercase px-2 py-0.5 bg-blue-100 text-blue-900 border border-blue-250 rounded-md">
+                          -${Math.abs(priceDiff)} Downgrade
+                        </span>
+                      ) : (
+                        <span className="text-[9.5px] font-extrabold uppercase px-2 py-0.5 bg-slate-200 text-slate-700 rounded-md">
+                          Same Total ($0 Change)
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Comparison Cards */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Current Package Column */}
+                      <div className="bg-white border border-slate-250 rounded-lg p-3 space-y-2">
+                        <p className="text-[9.5px] font-bold text-gray-400 uppercase tracking-wide">
+                          Current Package
+                        </p>
+                        <div>
+                          <p className="font-extrabold text-slate-900 text-xs">{currentPkg?.name || "None"}</p>
+                          <p className="text-[10.5px] text-gray-500">
+                            {packageChangeAttendee.formData.addDetroitJacket ? "Includes Detroit Jacket (+$135)" : "No Jacket Add-on"}
+                          </p>
+                        </div>
+                        <div className="pt-2 border-t border-slate-100 space-y-1 text-[11px]">
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Original Total:</span>
+                            <span className="font-mono font-bold text-slate-800">${currentGrandTotal}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Current Balance Due:</span>
+                            <span className="font-mono font-bold text-amber-700">${stats.balanceDue}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Newly Selected Package Column */}
+                      <div className="bg-gradient-to-br from-indigo-50/70 to-blue-50/50 border-2 border-indigo-300 rounded-lg p-3 space-y-2">
+                        <p className="text-[9.5px] font-bold text-indigo-600 uppercase tracking-wide">
+                          Newly Selected Package
+                        </p>
+                        <div>
+                          <p className="font-extrabold text-indigo-950 text-xs">{targetPkg?.name}</p>
+                          <p className="text-[10.5px] text-indigo-700">
+                            {willHaveJacket ? "Includes Detroit Jacket (+$135)" : "No Jacket Add-on"}
+                          </p>
+                        </div>
+                        <div className="pt-2 border-t border-indigo-150 space-y-1 text-[11px]">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">New Grand Total:</span>
+                            <span className="font-mono font-black text-indigo-950">${newGrandTotal}</span>
+                          </div>
+                          <div className="flex justify-between text-emerald-700">
+                            <span className="font-medium">Previous Paid Credited:</span>
+                            <span className="font-mono font-black">-${stats.totalPaid}</span>
+                          </div>
+                          <div className="flex justify-between pt-1 border-t border-indigo-200">
+                            <span className="font-black text-slate-900">New Balance Owed:</span>
+                            <span className="font-mono font-black text-sm text-indigo-900">${newBalanceDue}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Credit or zero balance notice */}
+                    {isOverpaid && (
+                      <div className="p-2.5 bg-emerald-50 border border-emerald-250 rounded-lg text-emerald-800 text-[11px] font-medium flex items-center gap-2">
+                        <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                        <span>
+                          Previous payments (${stats.totalPaid}) fully cover this package (${newGrandTotal}). Attendee has a <strong>${creditAmount} credit</strong> on file.
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Package Selection Options */}
+              <div className="space-y-2">
+                <label className="block text-[10.5px] uppercase font-black tracking-wider text-slate-700">
+                  Select New Package Option:
+                </label>
+                <div className="grid grid-cols-1 gap-2">
+                  {PACKAGE_OPTIONS.map((pkg) => {
+                    const isSelected = targetPackageId === pkg.id;
+                    const isCurrent = packageChangeAttendee.formData.selectedPackageId === pkg.id;
+
+                    return (
+                      <div
+                        key={pkg.id}
+                        onClick={() => {
+                          setTargetPackageId(pkg.id);
+                          if (pkg.id === "jacket-only") {
+                            setTargetAddJacket(true);
+                          }
+                        }}
+                        className={`p-3.5 rounded-xl border-2 transition-all cursor-pointer flex items-start justify-between gap-3 ${
+                          isSelected
+                            ? "bg-indigo-50/50 border-indigo-600 shadow-sm"
+                            : "bg-white border-slate-200 hover:border-slate-300"
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <input
+                            type="radio"
+                            name="targetPackageSelection"
+                            checked={isSelected}
+                            onChange={() => {
+                              setTargetPackageId(pkg.id);
+                              if (pkg.id === "jacket-only") {
+                                setTargetAddJacket(true);
+                              }
+                            }}
+                            className="mt-0.5 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          />
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h5 className={`text-xs font-bold ${isSelected ? "text-indigo-950" : "text-slate-900"}`}>
+                                {pkg.name}
+                              </h5>
+                              {isCurrent && (
+                                <span className="text-[9px] uppercase font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-sm border border-slate-200">
+                                  Current Package
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[10.5px] text-gray-500 mt-0.5 leading-snug">
+                              {pkg.note}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="text-right flex-shrink-0">
+                          <span className="font-mono text-sm font-black text-slate-900 bg-slate-100 px-2 py-1 rounded-md border border-slate-200">
+                            ${pkg.price}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Detroit Jacket Add-on Toggle (Applicable when not Jacket-Only) */}
+              {targetPackageId !== "jacket-only" ? (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+                  <label className="flex items-start gap-3 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={targetAddJacket}
+                      onChange={(e) => setTargetAddJacket(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded-sm border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                          <ShoppingBag className="w-3.5 h-3.5 text-indigo-600" />
+                          Include Custom Carhartt-Style Detroit Jacket
+                        </span>
+                        <span className="font-mono text-xs font-black text-indigo-950">+$135</span>
+                      </div>
+                      <p className="text-[10px] text-gray-500 mt-0.5">
+                        Heavyweight custom homecoming jacket with embroidered Greek letters and personalized chapter lineage.
+                      </p>
+                    </div>
+                  </label>
+                </div>
+              ) : (
+                <div className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-3 flex items-start gap-2.5">
+                  <ShoppingBag className="w-4 h-4 text-indigo-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-[10.5px] text-indigo-900 leading-relaxed">
+                    <strong>Detroit Jacket Only Package:</strong> The Custom Detroit Jacket ($135) is the primary item. Box and Event passes are excluded.
+                  </p>
+                </div>
+              )}
+
+              {/* Installment Milestone Schedule Preview */}
+              <div className="border border-slate-200 rounded-xl p-3.5 space-y-2 bg-white">
+                <span className="text-[9.5px] uppercase font-bold text-slate-500 tracking-wider block">
+                  New Installment Schedule Preview
+                </span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {getPaymentMilestones(targetPackageId, targetPackageId === "jacket-only" ? true : targetAddJacket).map((m, idx) => (
+                    <div key={idx} className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-center">
+                      <p className="text-[9px] font-bold text-gray-400 uppercase truncate" title={m.label}>{m.label}</p>
+                      <p className="text-[10px] text-slate-700 font-semibold">{m.date}</p>
+                      <p className="text-xs font-mono font-black text-slate-900 mt-0.5">${m.amount}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer Controls */}
+            <div className="bg-slate-50 border-t border-slate-200 p-4 sm:p-5 flex items-center justify-end gap-3 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setPackageChangeAttendee(null);
+                  setPackageChangeError(null);
+                }}
+                className="px-4 py-2 bg-white hover:bg-slate-100 border border-slate-300 text-gray-700 rounded-lg text-xs font-bold cursor-pointer transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isSavingPackageChange}
+                onClick={handleSavePackageChange}
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-black cursor-pointer shadow-md transition-all flex items-center gap-2 disabled:opacity-75 disabled:cursor-not-allowed"
+              >
+                {isSavingPackageChange ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Updating Package...</span>
+                  </>
+                ) : (
+                  <>
+                    <PackageCheck className="w-4 h-4" />
+                    <span>Confirm & Update Package</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Toast Notification */}
+      {packageChangeToast && (
+        <div className="fixed bottom-5 right-5 z-50 bg-slate-950 text-white px-4 py-3 rounded-xl shadow-2xl border border-indigo-500/30 flex items-start gap-3 max-w-md animate-in slide-in-from-bottom-5">
+          <PackageCheck className="w-5 h-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 text-xs">
+            <p className="font-extrabold text-white text-[12.5px]">{packageChangeToast.title}</p>
+            <p className="text-slate-300 mt-0.5 leading-relaxed">{packageChangeToast.message}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPackageChangeToast(null)}
+            className="text-slate-400 hover:text-white cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
