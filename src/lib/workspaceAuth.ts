@@ -8,8 +8,7 @@ export const SCOPES = [
 const provider = new GoogleAuthProvider();
 SCOPES.forEach((scope) => provider.addScope(scope));
 provider.setCustomParameters({
-  prompt: "consent",
-  access_type: "offline"
+  prompt: "select_account"
 });
 
 // Cache the access token and user in memory (per security guidelines)
@@ -86,7 +85,17 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
     console.error("Google Sign-In error:", error);
-    throw error;
+    let msg = error?.message || "Failed to sign in with Google";
+    if (error?.code === "auth/popup-blocked") {
+      msg = "Your browser blocked the Google sign-in window. Please allow popups for this page or open the portal in a new browser tab.";
+    } else if (error?.code === "auth/popup-closed-by-user") {
+      msg = "Sign-in was cancelled before completing. Click the button to try again.";
+    } else if (error?.code === "auth/unauthorized-domain") {
+      msg = "Domain authorization pending in Google Cloud Console. Please open the portal in a new browser tab.";
+    }
+    const enhancedError = new Error(msg);
+    (enhancedError as any).code = error?.code;
+    throw enhancedError;
   } finally {
     isSigningIn = false;
   }

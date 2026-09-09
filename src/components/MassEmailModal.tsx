@@ -507,14 +507,24 @@ export const MassEmailModal: React.FC<MassEmailModalProps> = ({
   const handleSendSingleToRecipient = async (attendee: HistoryEntry) => {
     let token = accessToken;
     if (!token) {
-      const cred = await googleSignIn();
-      if (cred?.accessToken) {
-        token = cred.accessToken;
-        setAccessToken(token);
-        setCurrentUser(cred.user);
-      } else {
-        alert("Please sign in with Google to authorize sending emails via your Gmail account.");
+      try {
+        setIsAuthenticating(true);
+        const cred = await googleSignIn();
+        if (cred?.accessToken) {
+          token = cred.accessToken;
+          setAccessToken(token);
+          setCurrentUser(cred.user);
+        } else {
+          setSingleSendStatus("failed");
+          setSingleSendMsg("Please sign in with Google to authorize sending emails.");
+          return;
+        }
+      } catch (authErr: any) {
+        setSingleSendStatus("failed");
+        setSingleSendMsg(authErr?.message || "Google sign-in required to deliver emails");
         return;
+      } finally {
+        setIsAuthenticating(false);
       }
     }
 
@@ -585,18 +595,19 @@ export const MassEmailModal: React.FC<MassEmailModalProps> = ({
     if (!token) {
       try {
         setIsAuthenticating(true);
+        setAuthError(null);
         const cred = await googleSignIn();
         if (cred?.accessToken) {
           token = cred.accessToken;
           setAccessToken(token);
           setCurrentUser(cred.user);
         } else {
-          alert("Please sign in with your Google account to authorize sending emails via Gmail.");
+          setAuthError("Google Sign-In was cancelled. Please authorize to start sending.");
           return;
         }
       } catch (authErr: any) {
         console.error("Authentication cancelled or failed:", authErr);
-        alert("Google authorization is required to send real emails to brothers' inboxes.");
+        setAuthError(authErr?.message || "Google authorization is required to send real emails to brothers' inboxes.");
         return;
       } finally {
         setIsAuthenticating(false);
@@ -604,7 +615,7 @@ export const MassEmailModal: React.FC<MassEmailModalProps> = ({
     }
 
     if (!token) {
-      alert("No active Gmail authorization token found. Please sign in with Google.");
+      setAuthError("No active Gmail authorization token found. Please sign in with Google.");
       return;
     }
 
@@ -1090,9 +1101,22 @@ ${body}
               </div>
             )}
             {authError && (
-              <div className="mt-3 p-2.5 rounded-lg text-xs bg-rose-50 border border-rose-200 text-rose-700 flex items-center gap-2">
-                <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                <span>Authentication notice: {authError}</span>
+              <div className="mt-3 p-3 rounded-lg text-xs bg-rose-50 border border-rose-200 text-rose-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>Authentication notice: {authError}</span>
+                </div>
+                {(authError.toLowerCase().includes("tab") || authError.toLowerCase().includes("popup") || authError.toLowerCase().includes("window")) && (
+                  <a
+                    href={window.location.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] font-bold bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 rounded-lg shrink-0 transition-colors shadow-2xs"
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    <span>Open in New Tab</span>
+                  </a>
+                )}
               </div>
             )}
           </div>

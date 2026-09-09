@@ -2,6 +2,22 @@
  * Service to compose RFC 2822 MIME messages and dispatch them via the Gmail REST API
  */
 
+function encodeUtf8Base64(str: string): string {
+  const bytes = new TextEncoder().encode(str);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
+function base64UrlEncode(str: string): string {
+  return encodeUtf8Base64(str)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
 export function createMimeMessage(
   to: string,
   subject: string,
@@ -10,7 +26,7 @@ export function createMimeMessage(
   senderEmail?: string
 ): string {
   const fromHeader = senderName && senderEmail
-    ? `From: =?utf-8?B?${btoa(unescape(encodeURIComponent(senderName)))}?= <${senderEmail}>`
+    ? `From: =?utf-8?B?${encodeUtf8Base64(senderName)}?= <${senderEmail}>`
     : senderEmail
     ? `From: ${senderEmail}`
     : "";
@@ -52,7 +68,7 @@ export function createMimeMessage(
   const headers = [
     `To: ${to}`,
     ...(fromHeader ? [fromHeader] : []),
-    `Subject: =?utf-8?B?${btoa(unescape(encodeURIComponent(subject)))}?=`,
+    `Subject: =?utf-8?B?${encodeUtf8Base64(subject)}?=`,
     "MIME-Version: 1.0",
     "Content-Type: text/html; charset=utf-8",
     "",
@@ -60,10 +76,7 @@ export function createMimeMessage(
   ];
 
   const raw = headers.join("\r\n");
-  return btoa(unescape(encodeURIComponent(raw)))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+  return base64UrlEncode(raw);
 }
 
 export interface GmailSendResult {

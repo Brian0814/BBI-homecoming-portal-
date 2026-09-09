@@ -233,7 +233,7 @@ export default function AdminPortal({
         }
       }
     }, (error) => {
-      console.error("Firestore onSnapshot error:", error);
+      handleFirestoreError(error, OperationType.GET, "registrations");
     });
 
     return () => unsubscribe();
