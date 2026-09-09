@@ -1241,15 +1241,29 @@ BBI Homecoming Committee`;
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
                           <p className="font-extrabold text-slate-900 text-[13px]">{item.formData.fullName}</p>
-                          {item.lastEmailSentAt && (
-                            <span 
-                              className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full"
-                              title={`Personalized mail merge email sent on ${new Date(item.lastEmailSentAt).toLocaleDateString()}`}
-                            >
-                              <Mail className="w-2.5 h-2.5 text-emerald-600" />
-                              <span>Sent {new Date(item.lastEmailSentAt).toLocaleDateString([], { month: 'numeric', day: 'numeric' })}</span>
-                            </span>
-                          )}
+                          {item.lastEmailSentAt && (() => {
+                            const lastLog = item.emailHistory && item.emailHistory.length > 0
+                              ? item.emailHistory[item.emailHistory.length - 1]
+                              : null;
+                            const isFailed = lastLog && lastLog.status === "failed";
+                            return isFailed ? (
+                              <span 
+                                className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full"
+                                title="Last email dispatch failed. Click mail icon to retry."
+                              >
+                                <AlertTriangle className="w-2.5 h-2.5 text-amber-600" />
+                                <span>Failed</span>
+                              </span>
+                            ) : (
+                              <span 
+                                className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full"
+                                title={`Personalized mail merge email sent on ${new Date(item.lastEmailSentAt).toLocaleDateString()}`}
+                              >
+                                <Mail className="w-2.5 h-2.5 text-emerald-600" />
+                                <span>Sent {new Date(item.lastEmailSentAt).toLocaleDateString([], { month: 'numeric', day: 'numeric' })}</span>
+                              </span>
+                            );
+                          })()}
                         </div>
                         <div className="flex items-center gap-2 mt-1">
                           <span className="inline-flex items-center gap-1 text-[9.5px] font-mono text-gray-550 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-sm uppercase font-bold">

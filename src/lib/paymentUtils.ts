@@ -108,17 +108,21 @@ export function getLocalDateString(d: Date = new Date()): string {
 
 export function formatDisplayDate(dateStr: string | undefined | null): string {
   if (!dateStr) return "";
-  // Check if it matches YYYY-MM-DD (e.g. from date input or getLocalDateString)
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    const [year, month, day] = dateStr.split("-").map(Number);
-    // Construct local Date at local midnight to avoid UTC offset shifting the day
-    const localDate = new Date(year, month - 1, day);
-    return localDate.toLocaleDateString();
+  const trimmed = dateStr.trim();
+  
+  // Extract YYYY-MM-DD if present at start (e.g. "2026-08-16" or "2026-08-16T00:00:00.000Z")
+  const ymdMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (ymdMatch) {
+    const year = ymdMatch[1];
+    const month = parseInt(ymdMatch[2], 10);
+    const day = parseInt(ymdMatch[3], 10);
+    return `${month}/${day}/${year}`;
   }
-  // If it's a full ISO string or other format, parse and format
-  const parsed = new Date(dateStr);
+
+  // Fallback for standard date parsing
+  const parsed = new Date(trimmed);
   if (isNaN(parsed.getTime())) return dateStr;
-  return parsed.toLocaleDateString();
+  return `${parsed.getMonth() + 1}/${parsed.getDate()}/${parsed.getFullYear()}`;
 }
 
 export function calculateAttendeeGrandTotal(formData: OrderForm): number {
