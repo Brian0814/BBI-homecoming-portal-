@@ -114,6 +114,19 @@ export interface PaymentTransaction {
   notes?: string;
 }
 
+export interface EmailLogEntry {
+  id: string;
+  sentAt: string;
+  templateId: string;
+  templateName: string;
+  subject: string;
+  recipientEmail: string;
+  status: "sent" | "delivered" | "failed";
+  method?: string;
+  messageId?: string;
+  error?: string;
+}
+
 export interface HistoryEntry {
   ref: string;
   date: string;
@@ -127,5 +140,7 @@ export interface HistoryEntry {
     };
   };
   paymentTransactions?: PaymentTransaction[];
+  emailHistory?: EmailLogEntry[];
+  lastEmailSentAt?: string;
 }
 

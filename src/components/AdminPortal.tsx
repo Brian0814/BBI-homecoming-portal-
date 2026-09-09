@@ -4,12 +4,12 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { OrderForm, PACKAGE_OPTIONS, SHIRT_SIZES, STATE_LIST } from "../types";
+import { OrderForm, PACKAGE_OPTIONS, SHIRT_SIZES, STATE_LIST, HistoryEntry, EmailLogEntry, PaymentTransaction } from "../types";
 import { 
   Users, Trash2, Search, Download, Printer, ArrowUpDown, ChevronDown, 
   Layers, CreditCard, Sparkles, Filter, MoreHorizontal, ShoppingCart, 
   MapPin, Phone, Mail, FileText, ArrowLeft, Ticket, ShoppingBag, Eye, Calendar, X,
-  Send, Copy, Check, Edit, AlertCircle, ArrowLeftRight, PackageCheck, Package, RefreshCw, AlertTriangle
+  Send, Copy, Check, Edit, AlertCircle, ArrowLeftRight, PackageCheck, Package, RefreshCw, AlertTriangle, Zap, Clock
 } from "lucide-react";
 import { 
   getPaymentMilestones, 
@@ -21,29 +21,6 @@ import {
 import { MassEmailModal } from "./MassEmailModal";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { collection, query, onSnapshot, doc, setDoc, deleteDoc, getDoc } from "firebase/firestore";
-
-interface PaymentTransaction {
-  id: string;
-  amount: number;
-  date: string;
-  method: string;
-  notes?: string;
-}
-
-interface HistoryEntry {
-  ref: string;
-  date: string;
-  formData: OrderForm;
-  payments?: {
-    [dateKey: string]: {
-      paid: boolean;
-      paidAt?: string | null;
-      method?: string | null;
-      amount?: number;
-    };
-  };
-  paymentTransactions?: PaymentTransaction[];
-}
 
 interface AdminPortalProps {
   onBackToForm: () => void;
@@ -171,6 +148,7 @@ export default function AdminPortal({
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isMassEmailModalOpen, setIsMassEmailModalOpen] = useState(false);
+  const [massEmailInitialRef, setMassEmailInitialRef] = useState<string | undefined>(undefined);
 
   // Custom Payment Form States
   const [payAmount, setPayAmount] = useState("");
@@ -924,12 +902,15 @@ BBI Homecoming Committee`;
         <div className="flex flex-wrap items-center gap-2 sm:self-center">
           <button
             type="button"
-            onClick={() => setIsMassEmailModalOpen(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-brand-blue to-indigo-700 hover:from-brand-blue-dark hover:to-indigo-800 text-white font-extrabold text-xs shadow-md hover:shadow-lg cursor-pointer transition-all ring-2 ring-brand-blue/20"
-            title="Personalize and mass email all registered attendees with merge tokens"
+            onClick={() => {
+              setMassEmailInitialRef(undefined);
+              setIsMassEmailModalOpen(true);
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-500 hover:to-teal-600 text-white font-black text-xs shadow-md hover:shadow-lg cursor-pointer transition-all ring-2 ring-emerald-400/30"
+            title="1-Click mass email mail merge messaging for all registered attendees"
           >
-            <Mail className="w-3.5 h-3.5 text-blue-100" />
-            <span>Mass Email & Mail Merge</span>
+            <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
+            <span>1-Click Mass Email</span>
             <span className="bg-white/20 text-white text-[10px] px-2 py-0.5 rounded-full font-mono font-bold">
               {history.length}
             </span>
@@ -1258,10 +1239,24 @@ BBI Homecoming Committee`;
                     >
                       {/* Member Name details */}
                       <td className="px-6 py-4">
-                        <p className="font-extrabold text-slate-900 text-[13px]">{item.formData.fullName}</p>
-                        <span className="inline-flex items-center gap-1 text-[9.5px] font-mono text-gray-550 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-sm mt-1 uppercase font-bold">
-                          🔑 {item.ref}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <p className="font-extrabold text-slate-900 text-[13px]">{item.formData.fullName}</p>
+                          {item.lastEmailSentAt && (
+                            <span 
+                              className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full"
+                              title={`Personalized mail merge email sent on ${new Date(item.lastEmailSentAt).toLocaleDateString()}`}
+                            >
+                              <Mail className="w-2.5 h-2.5 text-emerald-600" />
+                              <span>Sent {new Date(item.lastEmailSentAt).toLocaleDateString([], { month: 'numeric', day: 'numeric' })}</span>
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="inline-flex items-center gap-1 text-[9.5px] font-mono text-gray-550 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-sm uppercase font-bold">
+                            🔑 {item.ref}
+                          </span>
+                          <span className="text-[10.5px] text-slate-400 truncate max-w-[140px]">{item.formData.email}</span>
+                        </div>
                       </td>
 
                       {/* Reg Package type */}
@@ -1340,13 +1335,24 @@ BBI Homecoming Committee`;
                       </td>
 
                       {/* Action parameters */}
-                      <td className="px-6 py-4 text-right space-x-2 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-6 py-4 text-right space-x-1.5 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
                           onClick={() => setSelectedAttendee(item)}
                           className="px-2.5 py-1.5 rounded-lg bg-brand-blue hover:bg-brand-blue-dark text-white font-extrabold text-[10.5px] cursor-pointer shadow-xs transition-all"
                         >
                           View Profile
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMassEmailInitialRef(item.ref);
+                            setIsMassEmailModalOpen(true);
+                          }}
+                          className="p-1.5 rounded-lg hover:bg-emerald-50 text-gray-500 hover:text-emerald-700 cursor-pointer transition-colors inline-flex items-center justify-center align-middle border border-transparent hover:border-emerald-200"
+                          title="Compose personalized mail merge email for this brother"
+                        >
+                          <Mail className="w-3.5 h-3.5" />
                         </button>
                         <button
                           type="button"
@@ -1575,6 +1581,62 @@ BBI Homecoming Committee`;
                         )}
                       </button>
                     </div>
+
+                    {/* 1-Click Mail Merge Quick Launcher */}
+                    <div className="border-t border-gray-100 pt-4 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9.5px] uppercase font-black text-indigo-900 tracking-wider flex items-center gap-1">
+                          <Zap className="w-3 h-3 text-amber-500 fill-amber-500" />
+                          1-Click Mail Merge Studio
+                        </span>
+                        <span className="text-[8.5px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded-full">
+                          Personalized
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-gray-500 leading-snug">
+                        Open the 1-click mail merge composer pre-targeted to Brother {selectedAttendee.formData.fullName}.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMassEmailInitialRef(selectedAttendee.ref);
+                          setIsMassEmailModalOpen(true);
+                        }}
+                        className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-500 hover:to-teal-600 text-white rounded-xl text-xs font-black shadow-md cursor-pointer transition-all"
+                      >
+                        <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
+                        <span>Launch 1-Click Merge Email for {selectedAttendee.formData.fullName}</span>
+                      </button>
+                    </div>
+
+                    {/* Email Audit Trail Log (If any sent) */}
+                    {selectedAttendee.emailHistory && selectedAttendee.emailHistory.length > 0 && (
+                      <div className="border-t border-gray-100 pt-4 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9.5px] uppercase font-black text-slate-700 tracking-wider flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-slate-500" />
+                            Email Dispatch History ({selectedAttendee.emailHistory.length})
+                          </span>
+                          <span className="text-[9px] text-slate-400 font-mono">
+                            Last: {new Date(selectedAttendee.lastEmailSentAt || "").toLocaleDateString()}
+                          </span>
+                        </div>
+                        <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                          {selectedAttendee.emailHistory.map((hist) => (
+                            <div key={hist.id} className="p-2 rounded-lg bg-slate-50 border border-slate-200 text-[10.5px] space-y-0.5">
+                              <div className="flex items-center justify-between font-bold text-slate-800">
+                                <span className="truncate">{hist.templateName}</span>
+                                <span className="text-emerald-700 text-[9px] bg-emerald-100/70 px-1.5 py-0.2 rounded font-mono">
+                                  ✓ Sent
+                                </span>
+                              </div>
+                              <p className="text-[9.5px] text-slate-500 truncate">{hist.subject}</p>
+                              <p className="text-[8.5px] text-slate-400 font-mono">{new Date(hist.sentAt).toLocaleString()}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {/* Manual Email Dispatcher */}
                     <div className="border-t border-gray-100 pt-4 space-y-3">
@@ -2889,8 +2951,12 @@ BBI Homecoming Committee`;
       {/* Mass Email & Mail Merge Studio Modal */}
       <MassEmailModal
         isOpen={isMassEmailModalOpen}
-        onClose={() => setIsMassEmailModalOpen(false)}
+        onClose={() => {
+          setIsMassEmailModalOpen(false);
+          setMassEmailInitialRef(undefined);
+        }}
         allAttendees={history}
+        initialSelectedRef={massEmailInitialRef}
       />
     </div>
   );
