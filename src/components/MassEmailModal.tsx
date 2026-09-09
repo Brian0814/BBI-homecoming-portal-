@@ -19,8 +19,12 @@ import {
   ExternalLink, FileSpreadsheet, AlertCircle, CheckCircle2,
   ListFilter, RefreshCw, Layers, ArrowRight, Play, Pause,
   CheckCheck, Zap, Clock, ShieldCheck, RotateCcw,
-  StopCircle, AlertTriangle
+  StopCircle, AlertTriangle, LogOut, Inbox, CheckCircle
 } from "lucide-react";
+import { GoogleSignInButton } from "./GoogleSignInButton";
+import { initAuth, subscribeAuth, googleSignIn, logout, getAccessToken } from "../lib/workspaceAuth";
+import { sendEmailViaGmailApi } from "../lib/gmailService";
+import { User } from "firebase/auth";
 
 interface MassEmailModalProps {
   isOpen: boolean;
@@ -263,6 +267,50 @@ export const MassEmailModal: React.FC<MassEmailModalProps> = ({
   const [copiedBCC, setCopiedBCC] = useState(false);
   const [copiedAllTranscripts, setCopiedAllTranscripts] = useState(false);
 
+  // Google OAuth Auth State
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [testEmailStatus, setTestEmailStatus] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const [testEmailMsg, setTestEmailMsg] = useState<string>("");
+  const [singleSendStatus, setSingleSendStatus] = useState<"idle" | "sending" | "sent" | "failed">("idle");
+  const [singleSendMsg, setSingleSendMsg] = useState<string>("");
+
+  useEffect(() => {
+    initAuth();
+    const unsub = subscribeAuth((user, token) => {
+      setCurrentUser(user);
+      setAccessToken(token);
+    });
+    return () => {
+      unsub();
+    };
+  }, []);
+
+  const handleGoogleLogin = async () => {
+    try {
+      setIsAuthenticating(true);
+      setAuthError(null);
+      const res = await googleSignIn();
+      if (res) {
+        setCurrentUser(res.user);
+        setAccessToken(res.accessToken);
+      }
+    } catch (err: any) {
+      console.error("Google Sign-In failed:", err);
+      setAuthError(err?.message || "Failed to sign in with Google");
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
+  const handleGoogleLogout = async () => {
+    await logout();
+    setCurrentUser(null);
+    setAccessToken(null);
+  };
+
   // 1-Click Mass Dispatch Runner State
   const [is1ClickRunnerOpen, setIs1ClickRunnerOpen] = useState(false);
   const [batchStatus, setBatchStatus] = useState<"ready" | "in_progress" | "paused" | "completed" | "cancelled">("ready");
@@ -426,8 +474,139 @@ export const MassEmailModal: React.FC<MassEmailModalProps> = ({
     setIs1ClickRunnerOpen(true);
   };
 
+  const handleSendTestToSelf = async () => {
+    if (!accessToken || !currentUser?.email) {
+      await handleGoogleLogin();
+      return;
+    }
+    try {
+      setTestEmailStatus("sending");
+      setTestEmailMsg("");
+      const resolvedSub = `[TEST INBOX] ${resolvedPreview.subject || "BBI Homecoming 2026"}`;
+      const resolvedText = `*** THIS IS A TEST DELIVERY SENT DIRECTLY TO YOUR GMAIL INBOX ***\n\nPreviewing merged attendee: ${resolvedPreview.fullName} (${resolvedPreview.ref})\n\n------------------------------------\n\n${resolvedPreview.body}`;
+      
+      const res = await sendEmailViaGmailApi(
+        accessToken,
+        currentUser.email,
+        resolvedSub,
+        resolvedText,
+        currentUser.displayName || "BBI Homecoming Committee",
+        currentUser.email
+      );
+
+      setTestEmailStatus("sent");
+      setTestEmailMsg(`Delivered to ${currentUser.email}! (Msg ID: ${res.messageId.slice(0, 8)}...)`);
+      setTimeout(() => setTestEmailStatus("idle"), 6000);
+    } catch (err: any) {
+      console.error("Test email send failed:", err);
+      setTestEmailStatus("failed");
+      setTestEmailMsg(err?.message || "Failed to deliver test email. Please check your Gmail connection.");
+    }
+  };
+
+  const handleSendSingleToRecipient = async (attendee: HistoryEntry) => {
+    let token = accessToken;
+    if (!token) {
+      const cred = await googleSignIn();
+      if (cred?.accessToken) {
+        token = cred.accessToken;
+        setAccessToken(token);
+        setCurrentUser(cred.user);
+      } else {
+        alert("Please sign in with Google to authorize sending emails via your Gmail account.");
+        return;
+      }
+    }
+
+    try {
+      setSingleSendStatus("sending");
+      setSingleSendMsg("");
+
+      const resolvedSub = resolveMailMergeTokens(subjectTemplate, attendee);
+      const resolvedText = resolveMailMergeTokens(bodyTemplate, attendee);
+
+      const res = await sendEmailViaGmailApi(
+        token,
+        attendee.formData.email,
+        resolvedSub,
+        resolvedText,
+        currentUser?.displayName || "BBI Homecoming Committee",
+        currentUser?.email || undefined
+      );
+
+      // Persist delivery record to Firestore under registrations/{ref}
+      const nowIso = new Date().toISOString();
+      const currentPreset = TEMPLATE_PRESETS.find(p => p.id === selectedPresetId);
+      const templateName = currentPreset?.name || "Personalized Update";
+
+      try {
+        const existingHistory = attendee.emailHistory || [];
+        const newLogEntry: EmailLogEntry = {
+          id: res.messageId,
+          sentAt: nowIso,
+          templateId: selectedPresetId,
+          templateName: templateName,
+          subject: resolvedSub,
+          recipientEmail: attendee.formData.email,
+          status: "sent",
+          method: "direct-gmail-api",
+          messageId: res.messageId
+        };
+
+        await setDoc(
+          doc(db, "registrations", attendee.ref),
+          {
+            lastEmailSentAt: nowIso,
+            emailHistory: [...existingHistory, newLogEntry]
+          },
+          { merge: true }
+        );
+      } catch (fErr) {
+        console.warn("Firestore logging note:", fErr);
+      }
+
+      setSingleSendStatus("sent");
+      setSingleSendMsg(`Email delivered to ${attendee.formData.email}!`);
+      setTimeout(() => setSingleSendStatus("idle"), 5000);
+      if (onBatchDispatched) {
+        onBatchDispatched();
+      }
+    } catch (err: any) {
+      console.error("Direct single send failed:", err);
+      setSingleSendStatus("failed");
+      setSingleSendMsg(err?.message || "Failed to dispatch email via Gmail API");
+    }
+  };
+
   const handleStart1ClickBatchSend = async () => {
     if (targetRecipients.length === 0) return;
+
+    let token = accessToken;
+    if (!token) {
+      try {
+        setIsAuthenticating(true);
+        const cred = await googleSignIn();
+        if (cred?.accessToken) {
+          token = cred.accessToken;
+          setAccessToken(token);
+          setCurrentUser(cred.user);
+        } else {
+          alert("Please sign in with your Google account to authorize sending emails via Gmail.");
+          return;
+        }
+      } catch (authErr: any) {
+        console.error("Authentication cancelled or failed:", authErr);
+        alert("Google authorization is required to send real emails to brothers' inboxes.");
+        return;
+      } finally {
+        setIsAuthenticating(false);
+      }
+    }
+
+    if (!token) {
+      alert("No active Gmail authorization token found. Please sign in with Google.");
+      return;
+    }
 
     setBatchStatus("in_progress");
     const startTime = Date.now();
@@ -467,7 +646,7 @@ export const MassEmailModal: React.FC<MassEmailModalProps> = ({
       const resolvedSub = resolveMailMergeTokens(subjectTemplate, attendee);
       const resolvedText = resolveMailMergeTokens(bodyTemplate, attendee);
 
-      let success = true;
+      let success = false;
       let messageId = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 7)}`;
       let errorMsg: string | undefined = undefined;
 
@@ -477,32 +656,52 @@ export const MassEmailModal: React.FC<MassEmailModalProps> = ({
         errorMsg = "Missing or invalid email address";
       } else {
         try {
-          // Dispatch to server API endpoint (proxied cleanly by nginx)
-          const resp = await fetch("/api/email/send-single", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              to: attendee.formData.email,
-              recipientName: attendee.formData.fullName,
-              subject: resolvedSub,
-              bodyText: resolvedText,
-              ref: attendee.ref
-            })
-          });
-
-          if (resp.ok) {
-            const data = await resp.json().catch(() => ({}));
-            messageId = data.messageId || messageId;
-            success = true;
-          } else {
-            console.warn("API dispatch returned status:", resp.status);
-            // Fallback to successful chapter cloud ledger recording
-            success = true;
-          }
-        } catch (err: any) {
-          // Fallback for direct browser dispatch recording
-          console.warn("API delivery fallback, logging to ledger:", err);
+          // Direct dispatch via Gmail REST API using the user's authorized OAuth access token
+          const res = await sendEmailViaGmailApi(
+            token,
+            attendee.formData.email,
+            resolvedSub,
+            resolvedText,
+            currentUser?.displayName || "BBI Homecoming Committee",
+            currentUser?.email || undefined
+          );
+          messageId = res.messageId;
           success = true;
+        } catch (err: any) {
+          console.error(`Gmail direct dispatch failed for ${attendee.formData.email}:`, err);
+          
+          // Try backend proxy fallback with Bearer token
+          try {
+            const resp = await fetch("/api/email/send-single", {
+              method: "POST",
+              headers: { 
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                to: attendee.formData.email,
+                recipientName: attendee.formData.fullName,
+                subject: resolvedSub,
+                bodyText: resolvedText,
+                ref: attendee.ref,
+                senderName: currentUser?.displayName || "BBI Homecoming Committee",
+                senderEmail: currentUser?.email
+              })
+            });
+
+            if (resp.ok) {
+              const data = await resp.json().catch(() => ({}));
+              messageId = data.messageId || messageId;
+              success = true;
+            } else {
+              const errBody = await resp.json().catch(() => ({}));
+              success = false;
+              errorMsg = errBody?.error || err?.message || "Delivery rejected by email service";
+            }
+          } catch (backendErr: any) {
+            success = false;
+            errorMsg = err?.message || backendErr?.message || "Network exception during delivery";
+          }
         }
       }
 
@@ -519,7 +718,7 @@ export const MassEmailModal: React.FC<MassEmailModalProps> = ({
           subject: resolvedSub,
           recipientEmail: attendee.formData.email,
           status: success ? "sent" : "failed",
-          method: "1-click-mass-merge",
+          method: "direct-gmail-api",
           messageId: messageId,
           ...(errorMsg ? { error: errorMsg } : {})
         };
@@ -547,8 +746,8 @@ export const MassEmailModal: React.FC<MassEmailModalProps> = ({
         } : item
       ));
 
-      // Pacing delay (250ms) for smooth UI feedback and spam prevention
-      await new Promise(resolve => setTimeout(resolve, 250));
+      // Pacing delay (300ms) for smooth UI feedback and spam prevention
+      await new Promise(resolve => setTimeout(resolve, 300));
     }
 
     if (!isCancelledRef.current) {
@@ -796,6 +995,108 @@ ${body}
            ======================================================================= */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 bg-slate-50/50">
           
+          {/* GMAIL API AUTHENTICATION & DIRECT INBOX DISPATCH BANNER */}
+          <div className={`p-4 rounded-xl border transition-all ${
+            accessToken && currentUser 
+              ? "bg-gradient-to-r from-emerald-950/20 via-slate-900 to-slate-900 text-white border-emerald-500/40 shadow-sm"
+              : "bg-gradient-to-r from-amber-50 to-orange-50/70 border-amber-200 text-slate-800 shadow-xs"
+          }`}>
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className={`p-2.5 rounded-xl shrink-0 ${
+                  accessToken && currentUser 
+                    ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" 
+                    : "bg-amber-100 text-amber-700 border border-amber-200"
+                }`}>
+                  <Mail className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h4 className={`text-sm font-black ${accessToken && currentUser ? "text-white" : "text-slate-900"}`}>
+                      {accessToken && currentUser ? "Gmail Delivery Active (Direct to Inboxes)" : "Connect Gmail for Real Inbox Delivery"}
+                    </h4>
+                    {accessToken && currentUser ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                        Authorized: {currentUser.email}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[11px] bg-amber-200/60 text-amber-800 border border-amber-300 px-2 py-0.5 rounded-full font-bold">
+                        <AlertCircle className="w-3 h-3 text-amber-700" />
+                        Google Sign-In Required
+                      </span>
+                    )}
+                  </div>
+                  <p className={`text-xs mt-0.5 ${accessToken && currentUser ? "text-slate-300" : "text-slate-600"}`}>
+                    {accessToken && currentUser
+                      ? "Emails dispatch directly through your verified Gmail account. Sent letters will appear in your official Gmail Sent folder."
+                      : "Authorize sending to deliver personalized letters directly into brothers' inboxes without bounce-backs or mock logs."}
+                  </p>
+                </div>
+              </div>
+
+              {/* ACTION BUTTONS */}
+              <div className="flex items-center gap-2.5 shrink-0 w-full md:w-auto justify-end flex-wrap">
+                {accessToken && currentUser ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={testEmailStatus === "sending"}
+                      onClick={handleSendTestToSelf}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-black shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                      title={`Send a real test email with current merged preview to ${currentUser.email}`}
+                    >
+                      {testEmailStatus === "sending" ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      ) : testEmailStatus === "sent" ? (
+                        <Check className="w-3.5 h-3.5 text-emerald-300" />
+                      ) : (
+                        <Inbox className="w-3.5 h-3.5 text-indigo-200" />
+                      )}
+                      <span>
+                        {testEmailStatus === "sending" ? "Sending to Inbox..." : "Send Test to My Inbox"}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleGoogleLogout}
+                      className="inline-flex items-center gap-1 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold border border-slate-700 cursor-pointer"
+                      title="Switch or disconnect Google account"
+                    >
+                      <LogOut className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Disconnect</span>
+                    </button>
+                  </>
+                ) : (
+                  <GoogleSignInButton 
+                    onClick={handleGoogleLogin} 
+                    isLoading={isAuthenticating} 
+                    text="Sign in with Google to Deliver" 
+                  />
+                )}
+              </div>
+            </div>
+
+            {/* Test or Auth notification messages */}
+            {testEmailMsg && (
+              <div className={`mt-3 p-2.5 rounded-lg text-xs flex items-center gap-2 ${
+                testEmailStatus === "sent"
+                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                  : "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+              }`}>
+                {testEmailStatus === "sent" ? <CheckCircle className="w-3.5 h-3.5 text-emerald-400 shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />}
+                <span>{testEmailMsg}</span>
+              </div>
+            )}
+            {authError && (
+              <div className="mt-3 p-2.5 rounded-lg text-xs bg-rose-50 border border-rose-200 text-rose-700 flex items-center gap-2">
+                <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                <span>Authentication notice: {authError}</span>
+              </div>
+            )}
+          </div>
+
           {/* Section 1: Template Presets Selector */}
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-3">
             <div className="flex items-center justify-between">
@@ -1123,29 +1424,67 @@ ${body}
                   </div>
 
                   {/* Single Recipient Testing Controls */}
-                  <div className="flex items-center justify-between pt-1">
-                    <span className="text-[11px] text-slate-500 font-medium">
-                      Testing preview for single attendee:
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={handleCopySingle}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-3xs cursor-pointer"
-                      >
-                        {copiedSingle ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-slate-400" />}
-                        <span>{copiedSingle ? "Copied" : "Copy Body"}</span>
-                      </button>
-                      <a
-                        href={currentGmailUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg shadow-3xs cursor-pointer"
-                      >
-                        <ExternalLink className="w-3 h-3 text-rose-600" />
-                        <span>Test in Gmail</span>
-                      </a>
+                  <div className="pt-2 border-t border-slate-200/80 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[11px] text-slate-500 font-medium">
+                        Live Testing & Single Dispatch:
+                      </span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={handleCopySingle}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-3xs cursor-pointer"
+                        >
+                          {copiedSingle ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3 text-slate-400" />}
+                          <span>{copiedSingle ? "Copied" : "Copy Body"}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={singleSendStatus === "sending"}
+                          onClick={() => {
+                            const attendee = targetRecipients[previewIndex];
+                            if (attendee) handleSendSingleToRecipient(attendee);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-lg shadow-3xs cursor-pointer disabled:opacity-50"
+                          title={`Deliver email directly to ${resolvedPreview.to} via Gmail API`}
+                        >
+                          {singleSendStatus === "sending" ? (
+                            <RefreshCw className="w-3 h-3 animate-spin text-emerald-600" />
+                          ) : (
+                            <Send className="w-3 h-3 text-emerald-600" />
+                          )}
+                          <span>
+                            {singleSendStatus === "sending" ? "Delivering..." : `Send to ${resolvedPreview.fullName.split(" ")[0]}`}
+                          </span>
+                        </button>
+
+                        <a
+                          href={currentGmailUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg shadow-3xs cursor-pointer"
+                        >
+                          <ExternalLink className="w-3 h-3 text-rose-600" />
+                          <span>Draft in Gmail</span>
+                        </a>
+                      </div>
                     </div>
+
+                    {singleSendMsg && (
+                      <div className={`p-2 rounded-lg text-xs flex items-center gap-1.5 ${
+                        singleSendStatus === "sent" 
+                          ? "bg-emerald-50 text-emerald-800 border border-emerald-200" 
+                          : "bg-rose-50 text-rose-800 border border-rose-200"
+                      }`}>
+                        {singleSendStatus === "sent" ? (
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        ) : (
+                          <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                        )}
+                        <span>{singleSendMsg}</span>
+                      </div>
+                    )}
                   </div>
 
                 </div>
@@ -1342,7 +1681,9 @@ ${body}
                     <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-4 text-xs space-y-2 text-slate-700">
                       <div className="flex items-center justify-between font-bold text-slate-900 border-b border-blue-200/60 pb-2">
                         <span>Pre-Flight Dispatch Checklist</span>
-                        <span className="text-emerald-700 font-mono">100% Ready</span>
+                        <span className={`font-mono ${accessToken && currentUser ? "text-emerald-700" : "text-amber-700"}`}>
+                          {accessToken && currentUser ? "100% Ready (Gmail Authorized)" : "Sign-In Required"}
+                        </span>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-xs">
                         <div>
@@ -1357,11 +1698,15 @@ ${body}
                         </div>
                         <div>
                           <span className="text-slate-500 block text-[10.5px]">Sender Identity:</span>
-                          <span className="font-bold text-slate-900">BBI Homecoming Committee</span>
+                          <span className="font-bold text-slate-900 truncate block">
+                            {currentUser ? currentUser.email : "BBI Homecoming Committee"}
+                          </span>
                         </div>
                         <div>
-                          <span className="text-slate-500 block text-[10.5px]">Ledger Tracking:</span>
-                          <span className="font-bold text-emerald-700">Auto-saved to Firestore</span>
+                          <span className="text-slate-500 block text-[10.5px]">Delivery Engine:</span>
+                          <span className={`font-bold ${accessToken && currentUser ? "text-emerald-700" : "text-amber-700"}`}>
+                            {accessToken && currentUser ? "Official Gmail REST API" : "Awaiting Google Sign-In"}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -1559,14 +1904,22 @@ ${body}
                       Cancel & Return
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={handleStart1ClickBatchSend}
-                      className="inline-flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black shadow-lg cursor-pointer transition-all transform hover:-translate-y-0.5"
-                    >
-                      <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
-                      <span>Start 1-Click Mass Send Now ({targetRecipients.length})</span>
-                    </button>
+                    {!accessToken ? (
+                      <GoogleSignInButton
+                        onClick={handleGoogleLogin}
+                        isLoading={isAuthenticating}
+                        text={`Authorize Gmail & Send All (${targetRecipients.length})`}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleStart1ClickBatchSend}
+                        className="inline-flex items-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black shadow-lg cursor-pointer transition-all transform hover:-translate-y-0.5"
+                      >
+                        <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
+                        <span>Start 1-Click Mass Send Now ({targetRecipients.length})</span>
+                      </button>
+                    )}
                   </>
                 ) : batchStatus === "completed" || batchStatus === "cancelled" ? (
                   <div className="flex flex-wrap items-center justify-between w-full gap-2.5">
