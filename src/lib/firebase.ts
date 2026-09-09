@@ -43,12 +43,12 @@ const resolvedConfig = {
 };
 
 const isUsingCustomProject = envProjectId && envProjectId !== firebaseConfig.projectId;
-const databaseId = envDatabaseId || (isUsingCustomProject ? "(default)" : ((firebaseConfig as any).firestoreDatabaseId || "ai-studio-homecomingpackag-034631b2-e624-401b-9321-b40b8db2b2aa"));
+const databaseId = envDatabaseId || (isUsingCustomProject ? "(default)" : firebaseConfig.firestoreDatabaseId);
 
 // Initialize Firebase
 const app = initializeApp(resolvedConfig);
 export const db = getFirestore(app, databaseId); /* CRITICAL: The app will break without this line */
-export const auth = getAuth(app);
+export const auth = getAuth();
 
 // Operation Types as defined in guidelines
 export enum OperationType {
