@@ -169,3 +169,42 @@ export interface HistoryEntry {
   lastEmailSentAt?: string;
 }
 
+/**
+ * Hard-deduplicates earmarked funds by:
+ * 1. Unique ID
+ * 2. Semantic content fingerprint (sourceName + amount + date + method + notes)
+ * This guarantees that even if a duplicate is created or re-emitted by state,
+ * it is filtered out completely and only ONE record is displayed and processed.
+ */
+export function deduplicateEarmarkedFunds(funds: EarmarkedFund[]): EarmarkedFund[] {
+  if (!Array.isArray(funds)) return [];
+  const seenIds = new Set<string>();
+  const seenFingerprints = new Set<string>();
+  const result: EarmarkedFund[] = [];
+
+  for (const f of funds) {
+    if (!f || !f.id) continue;
+    // 1. Strict ID uniqueness
+    if (seenIds.has(f.id)) continue;
+
+    // 2. Semantic content uniqueness (prevents duplicate submissions with different generated IDs)
+    const normSource = (f.sourceName || "").trim().toLowerCase();
+    const normNotes = (f.notes || "").trim().toLowerCase();
+    const normMethod = (f.method || "").trim().toLowerCase();
+    const normDate = (f.date || "").trim();
+    const amount = Number(f.amount) || 0;
+    
+    const fingerprint = `${normSource}|${amount}|${normDate}|${normMethod}|${normNotes}`;
+    if (seenFingerprints.has(fingerprint)) {
+      continue;
+    }
+
+    seenIds.add(f.id);
+    seenFingerprints.add(fingerprint);
+    result.push(f);
+  }
+
+  return result;
+}
+
+

@@ -13,7 +13,8 @@ import {
   EmailLogEntry, 
   PaymentTransaction,
   EarmarkedFund,
-  EarmarkedFundAllocation 
+  EarmarkedFundAllocation,
+  deduplicateEarmarkedFunds 
 } from "../types";
 import { 
   Users, Trash2, Search, Download, Printer, ArrowUpDown, ChevronDown, 
@@ -275,13 +276,9 @@ export default function AdminPortal({
       if (savedEarmarked) {
         const parsed = JSON.parse(savedEarmarked);
         if (Array.isArray(parsed)) {
-          const seen = new Set<string>();
-          const deduplicated = parsed.filter((f) => {
-            if (!f || !f.id || seen.has(f.id)) return false;
-            seen.add(f.id);
-            return true;
-          });
+          const deduplicated = deduplicateEarmarkedFunds(parsed);
           setEarmarkedFunds(deduplicated);
+          localStorage.setItem("bbi_homecoming_2026_earmarked_funds", JSON.stringify(deduplicated));
         }
       }
     } catch (e) {
@@ -290,10 +287,10 @@ export default function AdminPortal({
 
     const qEarmarked = query(collection(db, "earmarked_funds"));
     const unsubEarmarked = onSnapshot(qEarmarked, async (snapshot) => {
-      const fundsMap = new Map<string, EarmarkedFund>();
+      const fundsList: EarmarkedFund[] = [];
       snapshot.forEach((docSnap) => {
         const raw = docSnap.data();
-        fundsMap.set(docSnap.id, {
+        fundsList.push({
           id: docSnap.id,
           amount: Number(raw.amount) || 0,
           allocatedAmount: Number(raw.allocatedAmount) || 0,
@@ -310,9 +307,9 @@ export default function AdminPortal({
         });
       });
 
-      const fundsData = Array.from(fundsMap.values());
+      const deduplicated = deduplicateEarmarkedFunds(fundsList);
 
-      if (fundsData.length === 0) {
+      if (deduplicated.length === 0) {
         try {
           const seedMetaRef = doc(db, "metadata", "earmarked_seeding_status");
           const seedMetaSnap = await getDoc(seedMetaRef);
@@ -332,7 +329,7 @@ export default function AdminPortal({
           setEarmarkedFunds([]);
         }
       } else {
-        const sortedFunds = fundsData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        const sortedFunds = deduplicated.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
         setEarmarkedFunds(sortedFunds);
         try {
           localStorage.setItem("bbi_homecoming_2026_earmarked_funds", JSON.stringify(sortedFunds));
@@ -978,12 +975,34 @@ BBI Homecoming Committee`;
     method: string;
     notes?: string;
   }) => {
+    const normSource = data.sourceName.trim().toLowerCase();
+    const normNotes = (data.notes || "").trim().toLowerCase();
+    const normMethod = data.method.trim().toLowerCase();
+    const normDate = data.date.trim();
+    const amount = Number(data.amount) || 0;
+
+    // Check if an identical fund already exists in state to block accidental duplicates
+    const isDuplicate = earmarkedFunds.some((f) => {
+      return (
+        (f.sourceName || "").trim().toLowerCase() === normSource &&
+        Number(f.amount) === amount &&
+        (f.date || "").trim() === normDate &&
+        (f.method || "").trim().toLowerCase() === normMethod &&
+        (f.notes || "").trim().toLowerCase() === normNotes
+      );
+    });
+
+    if (isDuplicate) {
+      console.warn("Attempted to add duplicate earmarked fund, ignoring:", data);
+      return;
+    }
+
     const newId = `EARMARK-${Date.now()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
     const newFund: EarmarkedFund = {
       id: newId,
-      amount: Number(data.amount) || 0,
+      amount: amount,
       allocatedAmount: 0,
-      remainingAmount: Number(data.amount) || 0,
+      remainingAmount: amount,
       sourceName: data.sourceName.trim(),
       email: data.email?.trim() || "",
       phone: data.phone?.trim() || "",
@@ -995,31 +1014,32 @@ BBI Homecoming Committee`;
       allocations: []
     };
 
-    // Optimistically update local state ensuring no duplicate ID exists
-    setEarmarkedFunds((prev) => {
-      if (prev.some((f) => f.id === newId)) return prev;
-      return [newFund, ...prev];
-    });
-
-    // Persist to Firestore
+    // 1. Persist to Firestore
     await setDoc(doc(db, "earmarked_funds", newId), cleanFirestoreData(newFund));
 
-    // Save to Local Fallback Sync (deduplicated)
+    // 2. Safely update local state using deduplication
+    setEarmarkedFunds((prev) => deduplicateEarmarkedFunds([newFund, ...prev]));
+
+    // 3. Save to Local Fallback Sync with deduplication
     try {
       const saved = localStorage.getItem("bbi_homecoming_2026_earmarked_funds");
       const list: EarmarkedFund[] = saved ? JSON.parse(saved) : [];
-      if (!list.some((f) => f.id === newId)) {
-        list.unshift(newFund);
-        localStorage.setItem("bbi_homecoming_2026_earmarked_funds", JSON.stringify(list));
-      }
+      const updated = deduplicateEarmarkedFunds([newFund, ...list]);
+      localStorage.setItem("bbi_homecoming_2026_earmarked_funds", JSON.stringify(updated));
     } catch (e) {
       console.warn("Local storage fallback save failed on add fund:", e);
     }
   };
 
   const handleDeleteEarmarkedFund = async (fundId: string) => {
-    // 1. Optimistically remove only the specific fund from state
-    setEarmarkedFunds((prev) => prev.filter((f) => f.id !== fundId));
+    // 1. Remove ONLY the single specific fund from state by index
+    setEarmarkedFunds((prev) => {
+      const idx = prev.findIndex((f) => f.id === fundId);
+      if (idx === -1) return prev;
+      const next = [...prev];
+      next.splice(idx, 1);
+      return next;
+    });
 
     // 2. Delete from Firestore
     try {
@@ -1028,13 +1048,16 @@ BBI Homecoming Committee`;
       console.error("Firestore deleteDoc earmarked_funds error:", err);
     }
 
-    // 3. Update localStorage fallback
+    // 3. Update localStorage fallback removing only this item
     try {
       const saved = localStorage.getItem("bbi_homecoming_2026_earmarked_funds");
       if (saved) {
         const list: EarmarkedFund[] = JSON.parse(saved);
-        const filtered = list.filter((f) => f.id !== fundId);
-        localStorage.setItem("bbi_homecoming_2026_earmarked_funds", JSON.stringify(filtered));
+        const idx = list.findIndex((f) => f.id === fundId);
+        if (idx !== -1) {
+          list.splice(idx, 1);
+          localStorage.setItem("bbi_homecoming_2026_earmarked_funds", JSON.stringify(list));
+        }
       }
     } catch (e) {
       console.warn("Local storage fallback sync failed on delete fund:", e);
@@ -1259,14 +1282,9 @@ BBI Homecoming Committee`;
   const totalRevenue = history.reduce((sum, item) => sum + calculateGrandTotal(item.formData), 0);
   const totalPaidFromRegistrations = history.reduce((sum, item) => sum + getAttendeePaymentStats(item).totalPaid, 0);
 
-  // Guarantee strict uniqueness of earmarked funds by ID across all statistics and components
+  // Guarantee strict uniqueness of earmarked funds across all statistics and components
   const uniqueEarmarkedFunds = useMemo(() => {
-    const seen = new Set<string>();
-    return earmarkedFunds.filter((f) => {
-      if (!f || !f.id || seen.has(f.id)) return false;
-      seen.add(f.id);
-      return true;
-    });
+    return deduplicateEarmarkedFunds(earmarkedFunds);
   }, [earmarkedFunds]);
 
   const totalUnallocatedEarmarked = uniqueEarmarkedFunds.reduce((sum, f) => sum + (f.remainingAmount || 0), 0);

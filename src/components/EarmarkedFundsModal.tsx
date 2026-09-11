@@ -8,7 +8,8 @@ import {
   EarmarkedFund, 
   EarmarkedFundAllocation, 
   HistoryEntry, 
-  PACKAGE_OPTIONS 
+  PACKAGE_OPTIONS,
+  deduplicateEarmarkedFunds 
 } from "../types";
 import { 
   X, 
@@ -131,14 +132,9 @@ export function EarmarkedFundsModal({
     prevIsOpenRef.current = isOpen;
   }, [isOpen, initialTargetRef, history, earmarkedFunds]);
 
-  // Guarantee unique funds by ID
+  // Guarantee unique funds by ID and semantic content fingerprint
   const uniqueFunds = useMemo(() => {
-    const seen = new Set<string>();
-    return earmarkedFunds.filter((f) => {
-      if (!f || !f.id || seen.has(f.id)) return false;
-      seen.add(f.id);
-      return true;
-    });
+    return deduplicateEarmarkedFunds(earmarkedFunds);
   }, [earmarkedFunds]);
 
   // Aggregate stats
