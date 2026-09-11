@@ -13,7 +13,7 @@ import ReviewStep from "./components/ReviewStep";
 import ConfirmationStep from "./components/ConfirmationStep";
 import AdminPortal from "./components/AdminPortal";
 import { ChevronLeft, ChevronRight, Check, PackageOpen, LayoutDashboard, ShoppingCart, Sparkles, Lock, Eye, EyeOff, AlertCircle, RotateCcw } from "lucide-react";
-import { db, handleFirestoreError, OperationType } from "./lib/firebase";
+import { db, handleFirestoreError, OperationType, cleanFirestoreData } from "./lib/firebase";
 import { doc, setDoc } from "firebase/firestore";
 
 const LOCAL_STORAGE_KEY = "bbi_homecoming_2026_order";
@@ -318,7 +318,7 @@ export default function App() {
 
       // Persist submission state in Firestore in real-time
       try {
-        await setDoc(doc(db, "registrations", refCode), newEntry);
+        await setDoc(doc(db, "registrations", refCode), cleanFirestoreData(newEntry));
         
         // Persist submission state in history as a local fallback ONLY after database confirmation
         try {

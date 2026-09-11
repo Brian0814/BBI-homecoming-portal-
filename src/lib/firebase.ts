@@ -78,6 +78,29 @@ interface FirestoreErrorInfo {
 }
 
 /**
+ * Recursively cleans an object for Firestore by removing any undefined properties.
+ * Firestore throws an error if any field in setDoc/updateDoc is undefined.
+ */
+export function cleanFirestoreData<T>(data: T): T {
+  if (data === null || data === undefined) {
+    return data;
+  }
+  if (Array.isArray(data)) {
+    return data.map((item) => cleanFirestoreData(item)) as unknown as T;
+  }
+  if (typeof data === "object" && !(data instanceof Date)) {
+    const cleaned: Record<string, any> = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (value !== undefined) {
+        cleaned[key] = cleanFirestoreData(value);
+      }
+    }
+    return cleaned as T;
+  }
+  return data;
+}
+
+/**
  * Standardized Firestore error handler to output diagnostic JSON strings.
  */
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null): never {

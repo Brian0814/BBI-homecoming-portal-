@@ -159,11 +159,11 @@ export function EarmarkedFundsModal({
       await onAddFund({
         amount: numAmount,
         sourceName: formSourceName.trim(),
-        email: formEmail.trim() || undefined,
-        phone: formPhone.trim() || undefined,
+        email: formEmail.trim(),
+        phone: formPhone.trim(),
         date: formDate,
         method: formMethod,
-        notes: formNotes.trim() || undefined,
+        notes: formNotes.trim(),
       });
 
       // Reset form

@@ -30,7 +30,7 @@ import {
 } from "../lib/paymentUtils";
 import { MassEmailModal } from "./MassEmailModal";
 import { EarmarkedFundsModal } from "./EarmarkedFundsModal";
-import { db, handleFirestoreError, OperationType } from "../lib/firebase";
+import { db, handleFirestoreError, OperationType, cleanFirestoreData } from "../lib/firebase";
 import { collection, query, onSnapshot, doc, setDoc, deleteDoc, getDoc } from "firebase/firestore";
 
 interface AdminPortalProps {
@@ -286,7 +286,22 @@ export default function AdminPortal({
     const unsubEarmarked = onSnapshot(qEarmarked, async (snapshot) => {
       const fundsData: EarmarkedFund[] = [];
       snapshot.forEach((docSnap) => {
-        fundsData.push(docSnap.data() as EarmarkedFund);
+        const raw = docSnap.data();
+        fundsData.push({
+          id: docSnap.id,
+          amount: Number(raw.amount) || 0,
+          allocatedAmount: Number(raw.allocatedAmount) || 0,
+          remainingAmount: Number(raw.remainingAmount) || 0,
+          sourceName: raw.sourceName || "Contributor",
+          email: raw.email || "",
+          phone: raw.phone || "",
+          date: raw.date || "",
+          method: raw.method || "Zelle",
+          notes: raw.notes || "",
+          status: raw.status || "available",
+          createdAt: raw.createdAt || new Date().toISOString(),
+          allocations: Array.isArray(raw.allocations) ? raw.allocations : []
+        });
       });
 
       if (fundsData.length === 0) {
@@ -296,7 +311,7 @@ export default function AdminPortal({
           if (!seedMetaSnap.exists()) {
             await setDoc(seedMetaRef, { seeded: true });
             for (const entry of SEED_EARMARKED_DATA) {
-              await setDoc(doc(db, "earmarked_funds", entry.id), entry);
+              await setDoc(doc(db, "earmarked_funds", entry.id), cleanFirestoreData(entry));
             }
             setEarmarkedFunds(SEED_EARMARKED_DATA);
             localStorage.setItem("bbi_homecoming_2026_earmarked_funds", JSON.stringify(SEED_EARMARKED_DATA));
@@ -551,7 +566,7 @@ BBI Homecoming Committee`;
       };
 
       // 1. Save to Firestore
-      await setDoc(doc(db, "registrations", editingAttendee.ref), updatedEntry);
+      await setDoc(doc(db, "registrations", editingAttendee.ref), cleanFirestoreData(updatedEntry));
 
       // 2. Local fallback sync
       try {
@@ -630,7 +645,7 @@ BBI Homecoming Committee`;
       };
 
       // 1. Update Firestore
-      await setDoc(doc(db, "registrations", packageChangeAttendee.ref), updatedEntry);
+      await setDoc(doc(db, "registrations", packageChangeAttendee.ref), cleanFirestoreData(updatedEntry));
 
       // 2. Update local storage fallback
       try {
@@ -714,7 +729,7 @@ BBI Homecoming Committee`;
       };
 
       // Save to Firestore
-      await setDoc(doc(db, "registrations", attendee.ref), updatedEntry);
+      await setDoc(doc(db, "registrations", attendee.ref), cleanFirestoreData(updatedEntry));
 
       // Save to Local Fallback Sync
       try {
@@ -765,7 +780,7 @@ BBI Homecoming Committee`;
       };
 
       // Save to Firestore
-      await setDoc(doc(db, "registrations", attendee.ref), updatedEntry);
+      await setDoc(doc(db, "registrations", attendee.ref), cleanFirestoreData(updatedEntry));
 
       // Save to Local Fallback Sync
       try {
@@ -807,7 +822,7 @@ BBI Homecoming Committee`;
       };
 
       // Save to Firestore
-      await setDoc(doc(db, "registrations", attendee.ref), updatedEntry);
+      await setDoc(doc(db, "registrations", attendee.ref), cleanFirestoreData(updatedEntry));
 
       // Save to Local Fallback Sync
       try {
@@ -936,17 +951,17 @@ BBI Homecoming Committee`;
       allocatedAmount: 0,
       remainingAmount: data.amount,
       sourceName: data.sourceName,
-      email: data.email,
-      phone: data.phone,
+      email: data.email?.trim() || "",
+      phone: data.phone?.trim() || "",
       date: data.date,
       method: data.method,
-      notes: data.notes,
+      notes: data.notes?.trim() || "",
       status: "available",
       createdAt: new Date().toISOString(),
       allocations: []
     };
 
-    await setDoc(doc(db, "earmarked_funds", newId), newFund);
+    await setDoc(doc(db, "earmarked_funds", newId), cleanFirestoreData(newFund));
     setEarmarkedFunds((prev) => [newFund, ...prev]);
   };
 
@@ -973,7 +988,7 @@ BBI Homecoming Committee`;
       attendeeName: targetAttendee.formData.fullName,
       amount,
       date,
-      notes
+      notes: notes?.trim() || ""
     };
 
     const updatedAllocated = (fund.allocatedAmount || 0) + amount;
@@ -983,6 +998,9 @@ BBI Homecoming Committee`;
 
     const updatedFund: EarmarkedFund = {
       ...fund,
+      email: fund.email || "",
+      phone: fund.phone || "",
+      notes: fund.notes || "",
       allocatedAmount: updatedAllocated,
       remainingAmount: updatedRemaining,
       status: updatedStatus,
@@ -995,7 +1013,7 @@ BBI Homecoming Committee`;
       amount,
       date,
       method: fund.method || "Earmarked Treasury",
-      notes: notes || `Applied from Earmarked Fund (${fund.sourceName})`
+      notes: notes?.trim() || `Applied from Earmarked Fund (${fund.sourceName})`
     };
 
     const existingTransactions = targetAttendee.paymentTransactions || [];
@@ -1004,9 +1022,9 @@ BBI Homecoming Committee`;
       paymentTransactions: [...existingTransactions, newTransaction]
     };
 
-    // Save to Firestore
-    await setDoc(doc(db, "earmarked_funds", fundId), updatedFund);
-    await setDoc(doc(db, "registrations", registrationRef), updatedAttendee);
+    // Save to Firestore with clean data guarantees (no undefined values)
+    await setDoc(doc(db, "earmarked_funds", fundId), cleanFirestoreData(updatedFund));
+    await setDoc(doc(db, "registrations", registrationRef), cleanFirestoreData(updatedAttendee));
 
     // Optimistically update local state
     setEarmarkedFunds((prev) => prev.map((f) => (f.id === fundId ? updatedFund : f)));
@@ -1030,6 +1048,9 @@ BBI Homecoming Committee`;
 
     const updatedFund: EarmarkedFund = {
       ...fund,
+      email: fund.email || "",
+      phone: fund.phone || "",
+      notes: fund.notes || "",
       allocatedAmount: updatedAllocated,
       remainingAmount: updatedRemaining,
       status: updatedStatus,
@@ -1048,9 +1069,9 @@ BBI Homecoming Committee`;
       };
     }
 
-    await setDoc(doc(db, "earmarked_funds", fundId), updatedFund);
+    await setDoc(doc(db, "earmarked_funds", fundId), cleanFirestoreData(updatedFund));
     if (updatedAttendee) {
-      await setDoc(doc(db, "registrations", updatedAttendee.ref), updatedAttendee);
+      await setDoc(doc(db, "registrations", updatedAttendee.ref), cleanFirestoreData(updatedAttendee));
       setHistory((prev) => prev.map((h) => (h.ref === updatedAttendee!.ref ? updatedAttendee! : h)));
       if (selectedAttendee && selectedAttendee.ref === updatedAttendee.ref) {
         setSelectedAttendee(updatedAttendee);
