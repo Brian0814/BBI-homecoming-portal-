@@ -131,22 +131,32 @@ export function EarmarkedFundsModal({
     prevIsOpenRef.current = isOpen;
   }, [isOpen, initialTargetRef, history, earmarkedFunds]);
 
+  // Guarantee unique funds by ID
+  const uniqueFunds = useMemo(() => {
+    const seen = new Set<string>();
+    return earmarkedFunds.filter((f) => {
+      if (!f || !f.id || seen.has(f.id)) return false;
+      seen.add(f.id);
+      return true;
+    });
+  }, [earmarkedFunds]);
+
   // Aggregate stats
   const totalReceived = useMemo(() => 
-    earmarkedFunds.reduce((sum, f) => sum + (f.amount || 0), 0)
-  , [earmarkedFunds]);
+    uniqueFunds.reduce((sum, f) => sum + (f.amount || 0), 0)
+  , [uniqueFunds]);
 
   const totalAllocated = useMemo(() => 
-    earmarkedFunds.reduce((sum, f) => sum + (f.allocatedAmount || 0), 0)
-  , [earmarkedFunds]);
+    uniqueFunds.reduce((sum, f) => sum + (f.allocatedAmount || 0), 0)
+  , [uniqueFunds]);
 
   const totalRemaining = useMemo(() => 
-    earmarkedFunds.reduce((sum, f) => sum + (f.remainingAmount || 0), 0)
-  , [earmarkedFunds]);
+    uniqueFunds.reduce((sum, f) => sum + (f.remainingAmount || 0), 0)
+  , [uniqueFunds]);
 
   // Filtered funds
   const filteredFunds = useMemo(() => {
-    return earmarkedFunds.filter((f) => {
+    return uniqueFunds.filter((f) => {
       const matchSearch = 
         f.sourceName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (f.notes && f.notes.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -158,11 +168,12 @@ export function EarmarkedFundsModal({
 
       return matchSearch && matchStatus;
     }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [earmarkedFunds, searchTerm, statusFilter]);
+  }, [uniqueFunds, searchTerm, statusFilter]);
 
   // Handle new fund submission
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setFormError("");
 
     const numAmount = parseFloat(formAmount);
@@ -374,7 +385,7 @@ export function EarmarkedFundsModal({
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            <span>Earmarked Records ({earmarkedFunds.length})</span>
+            <span>Earmarked Records ({uniqueFunds.length})</span>
           </button>
 
           <button
@@ -397,7 +408,7 @@ export function EarmarkedFundsModal({
             type="button"
             onClick={() => {
               if (!selectedFundForApply) {
-                const available = earmarkedFunds.find((f) => (f.remainingAmount || 0) > 0);
+                const available = uniqueFunds.find((f) => (f.remainingAmount || 0) > 0);
                 if (available) {
                   setSelectedFundForApply(available);
                   if (targetRegistrationRef) {
@@ -465,14 +476,14 @@ export function EarmarkedFundsModal({
                     <DollarSign className="w-6 h-6" />
                   </div>
                   <h4 className="font-display font-bold text-sm text-slate-800">
-                    {earmarkedFunds.length === 0 ? "No Earmarked Funds Recorded Yet" : "No Matching Records Found"}
+                    {uniqueFunds.length === 0 ? "No Earmarked Funds Recorded Yet" : "No Matching Records Found"}
                   </h4>
                   <p className="text-xs text-slate-500 max-w-md mx-auto mt-1 mb-4">
-                    {earmarkedFunds.length === 0 
+                    {uniqueFunds.length === 0 
                       ? "Record advance payments, alumni donations, or unassigned deposits here. They will immediately be added to the Treasury Payments Collected total."
                       : "Try adjusting your search keywords or filter settings."}
                   </p>
-                  {earmarkedFunds.length === 0 && (
+                  {uniqueFunds.length === 0 && (
                     <button
                       type="button"
                       onClick={() => setActiveTab("create")}
@@ -801,7 +812,7 @@ export function EarmarkedFundsModal({
 
           {/* TAB 3: APPLY FUND TO A REGISTRATION */}
           {activeTab === "apply" && (() => {
-            const availableFunds = earmarkedFunds.filter((f) => (f.remainingAmount || 0) > 0);
+            const availableFunds = uniqueFunds.filter((f) => (f.remainingAmount || 0) > 0);
             
             if (availableFunds.length === 0) {
               return (
