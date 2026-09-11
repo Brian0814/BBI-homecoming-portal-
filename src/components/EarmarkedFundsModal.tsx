@@ -98,16 +98,38 @@ export function EarmarkedFundsModal({
   const [actionSuccessToast, setActionSuccessToast] = useState<string | null>(null);
 
   // If initialTargetRef is provided on open, switch to apply tab if funds are available
+  const prevIsOpenRef = React.useRef(false);
   React.useEffect(() => {
-    if (isOpen && initialTargetRef) {
-      setTargetRegistrationRef(initialTargetRef);
-      const firstAvailable = earmarkedFunds.find(f => f.remainingAmount > 0);
-      if (firstAvailable) {
-        setSelectedFundForApply(firstAvailable);
-        setActiveTab("apply");
+    if (isOpen && (!prevIsOpenRef.current || (initialTargetRef && targetRegistrationRef !== initialTargetRef))) {
+      const chosenTargetRef = initialTargetRef || targetRegistrationRef;
+      if (chosenTargetRef) {
+        setTargetRegistrationRef(chosenTargetRef);
+      }
+
+      let currentFund = selectedFundForApply;
+      if (!currentFund || currentFund.remainingAmount <= 0) {
+        const available = earmarkedFunds.find((f) => (f.remainingAmount || 0) > 0);
+        if (available) {
+          currentFund = available;
+          setSelectedFundForApply(available);
+        }
+      }
+
+      if (chosenTargetRef && currentFund && currentFund.remainingAmount > 0) {
+        const att = history.find((h) => h.ref === chosenTargetRef);
+        const bal = att ? getAttendeePaymentStats(att).balanceDue : 0;
+        const prefill = bal > 0 ? Math.min(bal, currentFund.remainingAmount) : currentFund.remainingAmount;
+        setApplyAmount(String(prefill));
+        setApplyNotes(`Applied from Earmarked Fund (${currentFund.sourceName})`);
+        setApplyDate(getLocalDateString());
+        setApplyError("");
+        if (initialTargetRef) {
+          setActiveTab("apply");
+        }
       }
     }
-  }, [isOpen, initialTargetRef, earmarkedFunds]);
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen, initialTargetRef, history, earmarkedFunds]);
 
   // Aggregate stats
   const totalReceived = useMemo(() => 
@@ -371,20 +393,36 @@ export function EarmarkedFundsModal({
             <span>+ Earmark New Funds</span>
           </button>
 
-          {selectedFundForApply && (
-            <button
-              type="button"
-              onClick={() => setActiveTab("apply")}
-              className={`py-3 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
-                activeTab === "apply"
-                  ? "border-brand-blue text-brand-blue"
-                  : "border-transparent text-slate-500 hover:text-slate-800"
-              }`}
-            >
-              <ArrowRight className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Apply to Registration ({selectedFundForApply.sourceName})</span>
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => {
+              if (!selectedFundForApply) {
+                const available = earmarkedFunds.find((f) => (f.remainingAmount || 0) > 0);
+                if (available) {
+                  setSelectedFundForApply(available);
+                  if (targetRegistrationRef) {
+                    const att = history.find(h => h.ref === targetRegistrationRef);
+                    const bal = att ? getAttendeePaymentStats(att).balanceDue : 0;
+                    const prefill = bal > 0 ? Math.min(bal, available.remainingAmount) : available.remainingAmount;
+                    setApplyAmount(String(prefill));
+                    setApplyNotes(`Applied from Earmarked Fund (${available.sourceName})`);
+                  } else {
+                    setApplyAmount(String(available.remainingAmount));
+                    setApplyNotes(`Applied from Earmarked Fund (${available.sourceName})`);
+                  }
+                }
+              }
+              setActiveTab("apply");
+            }}
+            className={`py-3 text-xs font-bold border-b-2 transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeTab === "apply"
+                ? "border-brand-blue text-brand-blue"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            <ArrowRight className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Apply to Registration {selectedFundForApply ? `(${selectedFundForApply.sourceName})` : ""}</span>
+          </button>
         </div>
 
         {/* Main Content Area */}
@@ -762,202 +800,272 @@ export function EarmarkedFundsModal({
           )}
 
           {/* TAB 3: APPLY FUND TO A REGISTRATION */}
-          {activeTab === "apply" && selectedFundForApply && (
-            <form onSubmit={handleConfirmApply} className="space-y-5 max-w-xl mx-auto py-2">
-              <div className="space-y-1">
-                <h4 className="font-display font-black text-base text-slate-900">
-                  Apply Earmarked Money to Brother's Registration
-                </h4>
-                <p className="text-xs text-slate-500">
-                  Credit funds from <strong className="text-slate-800">{selectedFundForApply.sourceName}</strong> directly 
-                  to a brother's registration ledger.
-                </p>
-              </div>
+          {activeTab === "apply" && (() => {
+            const availableFunds = earmarkedFunds.filter((f) => (f.remainingAmount || 0) > 0);
+            
+            if (availableFunds.length === 0) {
+              return (
+                <div className="text-center py-12 px-4 max-w-md mx-auto space-y-4">
+                  <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-full flex items-center justify-center mx-auto border border-amber-200">
+                    <AlertCircle className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="font-display font-black text-slate-800 text-base">
+                      No Available Earmarked Funds
+                    </h4>
+                    <p className="text-xs text-slate-500 mt-1">
+                      All earmarked holding funds have been fully allocated to brother registrations, or no earmarked records have been recorded yet.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormError("");
+                      setActiveTab("create");
+                    }}
+                    className="px-4 py-2 bg-brand-blue hover:bg-brand-blue-dark text-white rounded-xl text-xs font-black shadow-md cursor-pointer transition-all inline-flex items-center gap-1.5"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>+ Earmark New Funds</span>
+                  </button>
+                </div>
+              );
+            }
 
-              {/* Source fund info badge */}
-              <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3.5 flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] text-emerald-800 uppercase font-black tracking-wider block">
-                    Source Fund Available
-                  </span>
-                  <p className="text-xs text-emerald-950 font-bold mt-0.5">
-                    {selectedFundForApply.sourceName} ({selectedFundForApply.method})
+            const activeFund = selectedFundForApply && selectedFundForApply.remainingAmount > 0
+              ? selectedFundForApply
+              : availableFunds[0];
+
+            return (
+              <form onSubmit={handleConfirmApply} className="space-y-5 max-w-xl mx-auto py-2">
+                <div className="space-y-1">
+                  <h4 className="font-display font-black text-base text-slate-900">
+                    Apply Earmarked Money to Brother's Registration
+                  </h4>
+                  <p className="text-xs text-slate-500">
+                    Credit funds from the Treasury earmarked pool directly to a registered brother's payment ledger.
                   </p>
                 </div>
-                <div className="text-right">
-                  <span className="font-mono text-xl font-black text-emerald-700">
-                    ${selectedFundForApply.remainingAmount.toLocaleString()}
-                  </span>
-                  <span className="text-[9.5px] text-emerald-600 block">Remaining Balance</span>
-                </div>
-              </div>
 
-              {applyError && (
-                <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  <span>{applyError}</span>
-                </div>
-              )}
+                {applyError && (
+                  <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    <span>{applyError}</span>
+                  </div>
+                )}
 
-              {/* Registration Select */}
-              <div className="space-y-1">
-                <label className="block text-[10.5px] uppercase font-black tracking-wider text-slate-600">
-                  Select Registered Brother *
-                </label>
-                <select
-                  required
-                  value={targetRegistrationRef}
-                  onChange={(e) => {
-                    const newRef = e.target.value;
-                    setTargetRegistrationRef(newRef);
-                    // Pre-fill amount with lesser of fund balance and attendee balance
-                    const att = history.find(h => h.ref === newRef);
-                    if (att) {
-                      const { balanceDue } = getAttendeePaymentStats(att);
-                      if (balanceDue > 0) {
-                        setApplyAmount(String(Math.min(balanceDue, selectedFundForApply.remainingAmount)));
+                {/* Select Source Fund */}
+                <div className="space-y-1">
+                  <label className="block text-[10.5px] uppercase font-black tracking-wider text-slate-600">
+                    Source Earmarked Fund *
+                  </label>
+                  <select
+                    required
+                    value={activeFund.id}
+                    onChange={(e) => {
+                      const found = availableFunds.find((f) => f.id === e.target.value);
+                      if (found) {
+                        setSelectedFundForApply(found);
+                        const att = history.find((h) => h.ref === targetRegistrationRef);
+                        const bal = att ? getAttendeePaymentStats(att).balanceDue : 0;
+                        const prefill = bal > 0 ? Math.min(bal, found.remainingAmount) : found.remainingAmount;
+                        setApplyAmount(String(prefill));
+                        setApplyNotes(`Applied from Earmarked Fund (${found.sourceName})`);
                       }
-                    }
-                  }}
-                  className="w-full px-3 py-2 text-xs font-semibold bg-white border border-slate-300 rounded-xl focus:outline-hidden focus:border-brand-blue"
-                >
-                  <option value="">-- Choose an active registration --</option>
-                  {history.map((att) => {
-                    const { balanceDue, grandTotal, totalPaid } = getAttendeePaymentStats(att);
-                    const pkg = PACKAGE_OPTIONS.find(p => p.id === att.formData.selectedPackageId);
-                    return (
-                      <option key={att.ref} value={att.ref}>
-                        {att.formData.fullName} ({att.ref}) • {pkg?.name || "Package"} • Owed: ${balanceDue.toLocaleString()} (Total: ${grandTotal})
+                    }}
+                    className="w-full px-3 py-2 text-xs font-semibold bg-white border border-slate-300 rounded-xl focus:outline-hidden focus:border-brand-blue"
+                  >
+                    {availableFunds.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.sourceName} • ${f.remainingAmount.toLocaleString()} available ({f.method} on {f.date})
                       </option>
-                    );
-                  })}
-                </select>
-              </div>
+                    ))}
+                  </select>
+                </div>
 
-              {/* Target Registration Details Summary */}
-              {targetRegistrationRef && (() => {
-                const target = history.find(h => h.ref === targetRegistrationRef);
-                if (!target) return null;
-                const { grandTotal, totalPaid, balanceDue, statusLabel, statusColor } = getAttendeePaymentStats(target);
-                const pkg = PACKAGE_OPTIONS.find(p => p.id === target.formData.selectedPackageId);
+                {/* Source fund info card */}
+                <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3.5 flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] text-emerald-800 uppercase font-black tracking-wider block">
+                      Source Fund Available
+                    </span>
+                    <p className="text-xs text-emerald-950 font-bold mt-0.5">
+                      {activeFund.sourceName} ({activeFund.method})
+                    </p>
+                    {(activeFund.email || activeFund.phone) && (
+                      <p className="text-[10.5px] text-emerald-800/80">
+                        {[activeFund.email, activeFund.phone].filter(Boolean).join(" • ")}
+                      </p>
+                    )}
+                  </div>
+                  <div className="text-right">
+                    <span className="font-mono text-xl font-black text-emerald-700">
+                      ${activeFund.remainingAmount.toLocaleString()}
+                    </span>
+                    <span className="text-[9.5px] text-emerald-600 block">Remaining Balance</span>
+                  </div>
+                </div>
 
-                return (
-                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2 text-xs">
-                    <div className="flex items-center justify-between">
-                      <strong className="text-slate-900 font-extrabold">{target.formData.fullName}</strong>
-                      <span className={`text-[9.5px] font-black uppercase px-2 py-0.5 rounded-full border ${statusColor}`}>
-                        {statusLabel}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 text-center pt-1 border-t border-slate-200">
-                      <div>
-                        <span className="text-[9px] text-slate-400 uppercase font-bold block">Grand Total</span>
-                        <span className="font-mono font-black text-slate-800">${grandTotal.toLocaleString()}</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] text-emerald-600 uppercase font-bold block">Total Paid</span>
-                        <span className="font-mono font-black text-emerald-700">${totalPaid.toLocaleString()}</span>
-                      </div>
-                      <div>
-                        <span className="text-[9px] text-red-500 uppercase font-bold block">Balance Due</span>
-                        <span className="font-mono font-black text-red-650">${balanceDue.toLocaleString()}</span>
-                      </div>
-                    </div>
+                {/* Registration Select */}
+                <div className="space-y-1">
+                  <label className="block text-[10.5px] uppercase font-black tracking-wider text-slate-600">
+                    Select Registered Brother *
+                  </label>
+                  <select
+                    required
+                    value={targetRegistrationRef}
+                    onChange={(e) => {
+                      const newRef = e.target.value;
+                      setTargetRegistrationRef(newRef);
+                      const att = history.find((h) => h.ref === newRef);
+                      if (att) {
+                        const { balanceDue } = getAttendeePaymentStats(att);
+                        if (balanceDue > 0) {
+                          setApplyAmount(String(Math.min(balanceDue, activeFund.remainingAmount)));
+                        } else {
+                          setApplyAmount(String(activeFund.remainingAmount));
+                        }
+                      }
+                    }}
+                    className="w-full px-3 py-2 text-xs font-semibold bg-white border border-slate-300 rounded-xl focus:outline-hidden focus:border-brand-blue"
+                  >
+                    <option value="">-- Choose an active registration --</option>
+                    {history.map((att) => {
+                      const { balanceDue, grandTotal } = getAttendeePaymentStats(att);
+                      const pkg = PACKAGE_OPTIONS.find((p) => p.id === att.formData.selectedPackageId);
+                      return (
+                        <option key={att.ref} value={att.ref}>
+                          {att.formData.fullName} ({att.ref}) • {pkg?.name || "Package"} • Owed: ${balanceDue.toLocaleString()} (Total: ${grandTotal.toLocaleString()})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
 
-                    {/* Quick fill buttons */}
-                    <div className="flex flex-wrap gap-2 pt-1">
-                      {balanceDue > 0 && balanceDue <= selectedFundForApply.remainingAmount && (
+                {/* Target Registration Details Summary */}
+                {targetRegistrationRef && (() => {
+                  const target = history.find((h) => h.ref === targetRegistrationRef);
+                  if (!target) return null;
+                  const { grandTotal, totalPaid, balanceDue, statusLabel, statusColor } = getAttendeePaymentStats(target);
+
+                  return (
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <strong className="text-slate-900 font-extrabold">{target.formData.fullName}</strong>
+                        <span className={`text-[9.5px] font-black uppercase px-2 py-0.5 rounded-full border ${statusColor}`}>
+                          {statusLabel}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-center pt-1 border-t border-slate-200">
+                        <div>
+                          <span className="text-[9px] text-slate-400 uppercase font-bold block">Grand Total</span>
+                          <span className="font-mono font-black text-slate-800">${grandTotal.toLocaleString()}</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] text-emerald-600 uppercase font-bold block">Total Paid</span>
+                          <span className="font-mono font-black text-emerald-700">${totalPaid.toLocaleString()}</span>
+                        </div>
+                        <div>
+                          <span className="text-[9px] text-red-500 uppercase font-bold block">Balance Due</span>
+                          <span className="font-mono font-black text-red-650">${balanceDue.toLocaleString()}</span>
+                        </div>
+                      </div>
+
+                      {/* Quick fill buttons */}
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {balanceDue > 0 && balanceDue <= activeFund.remainingAmount && (
+                          <button
+                            type="button"
+                            onClick={() => setApplyAmount(String(balanceDue))}
+                            className="text-[10px] px-2 py-1 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-md font-bold cursor-pointer transition-colors"
+                          >
+                            Clear Full Balance Due (${balanceDue.toLocaleString()})
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => setApplyAmount(String(balanceDue))}
-                          className="text-[10px] px-2 py-1 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-md font-bold cursor-pointer transition-colors"
+                          onClick={() => setApplyAmount(String(activeFund.remainingAmount))}
+                          className="text-[10px] px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-md font-bold cursor-pointer transition-colors"
                         >
-                          Clear Full Balance Due (${balanceDue})
+                          Apply Full Fund Balance (${activeFund.remainingAmount.toLocaleString()})
                         </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => setApplyAmount(String(selectedFundForApply.remainingAmount))}
-                        className="text-[10px] px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-md font-bold cursor-pointer transition-colors"
-                      >
-                        Apply Full Fund Balance (${selectedFundForApply.remainingAmount})
-                      </button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })()}
+                  );
+                })()}
 
-              {/* Amount & Date */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="block text-[10.5px] uppercase font-black tracking-wider text-slate-600">
-                    Amount to Apply ($) *
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
+                {/* Amount & Date */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="block text-[10.5px] uppercase font-black tracking-wider text-slate-600">
+                      Amount to Apply ($) *
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
+                      <input
+                        type="number"
+                        step="any"
+                        min="1"
+                        max={activeFund.remainingAmount}
+                        required
+                        value={applyAmount}
+                        onChange={(e) => setApplyAmount(e.target.value)}
+                        className="w-full pl-7 pr-3 py-2 text-sm font-mono font-bold bg-white border border-slate-300 rounded-xl focus:outline-hidden focus:border-brand-blue"
+                      />
+                    </div>
+                    <span className="text-[10px] text-slate-400 block">
+                      Max: ${activeFund.remainingAmount.toLocaleString()}
+                    </span>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-[10.5px] uppercase font-black tracking-wider text-slate-600">
+                      Transaction Date *
+                    </label>
                     <input
-                      type="number"
-                      step="any"
-                      min="1"
-                      max={selectedFundForApply.remainingAmount}
+                      type="date"
                       required
-                      value={applyAmount}
-                      onChange={(e) => setApplyAmount(e.target.value)}
-                      className="w-full pl-7 pr-3 py-2 text-sm font-mono font-bold bg-white border border-slate-300 rounded-xl focus:outline-hidden focus:border-brand-blue"
+                      value={applyDate}
+                      onChange={(e) => setApplyDate(e.target.value)}
+                      className="w-full px-3 py-2 text-xs font-semibold bg-white border border-slate-300 rounded-xl focus:outline-hidden focus:border-brand-blue"
                     />
                   </div>
-                  <span className="text-[10px] text-slate-400 block">
-                    Max: ${selectedFundForApply.remainingAmount.toLocaleString()}
-                  </span>
                 </div>
 
+                {/* Notes */}
                 <div className="space-y-1">
                   <label className="block text-[10.5px] uppercase font-black tracking-wider text-slate-600">
-                    Transaction Date *
+                    Ledger Transaction Note
                   </label>
                   <input
-                    type="date"
-                    required
-                    value={applyDate}
-                    onChange={(e) => setApplyDate(e.target.value)}
-                    className="w-full px-3 py-2 text-xs font-semibold bg-white border border-slate-300 rounded-xl focus:outline-hidden focus:border-brand-blue"
+                    type="text"
+                    value={applyNotes}
+                    onChange={(e) => setApplyNotes(e.target.value)}
+                    className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:outline-hidden focus:border-brand-blue"
                   />
                 </div>
-              </div>
 
-              {/* Notes */}
-              <div className="space-y-1">
-                <label className="block text-[10.5px] uppercase font-black tracking-wider text-slate-600">
-                  Ledger Transaction Note
-                </label>
-                <input
-                  type="text"
-                  value={applyNotes}
-                  onChange={(e) => setApplyNotes(e.target.value)}
-                  className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:outline-hidden focus:border-brand-blue"
-                />
-              </div>
-
-              {/* Submit Buttons */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("list")}
-                  className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl text-xs font-bold cursor-pointer transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isApplying}
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black shadow-md cursor-pointer transition-all disabled:opacity-50 flex items-center gap-1.5"
-                >
-                  <Check className="w-3.5 h-3.5" />
-                  <span>{isApplying ? "Applying Funds..." : "Confirm & Apply to Registration"}</span>
-                </button>
-              </div>
-            </form>
-          )}
+                {/* Submit Buttons */}
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("list")}
+                    className="px-4 py-2 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-xl text-xs font-bold cursor-pointer transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isApplying}
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black shadow-md cursor-pointer transition-all disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>{isApplying ? "Applying Funds..." : "Confirm & Apply to Registration"}</span>
+                  </button>
+                </div>
+              </form>
+            );
+          })()}
         </div>
       </div>
     </div>

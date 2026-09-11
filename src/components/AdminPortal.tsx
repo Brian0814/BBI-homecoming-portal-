@@ -824,6 +824,32 @@ BBI Homecoming Committee`;
       // Save to Firestore
       await setDoc(doc(db, "registrations", attendee.ref), cleanFirestoreData(updatedEntry));
 
+      // If this transaction was from an earmarked allocation, restore the fund's available balance!
+      if (txId.startsWith("TX-EARMARK-")) {
+        const allocId = txId.replace("TX-EARMARK-", "");
+        const parentFund = earmarkedFunds.find((f) =>
+          (f.allocations || []).some((a) => a.id === allocId)
+        );
+        if (parentFund) {
+          const alloc = (parentFund.allocations || []).find((a) => a.id === allocId);
+          if (alloc) {
+            const updatedAllocations = (parentFund.allocations || []).filter((a) => a.id !== allocId);
+            const updatedAllocated = Math.max(0, (parentFund.allocatedAmount || 0) - alloc.amount);
+            const updatedRemaining = (parentFund.amount || 0) - updatedAllocated;
+            const updatedStatus = updatedAllocated === 0 ? "available" : "partially_applied";
+            const updatedFund: EarmarkedFund = {
+              ...parentFund,
+              allocatedAmount: updatedAllocated,
+              remainingAmount: updatedRemaining,
+              status: updatedStatus,
+              allocations: updatedAllocations
+            };
+            await setDoc(doc(db, "earmarked_funds", parentFund.id), cleanFirestoreData(updatedFund));
+            setEarmarkedFunds((prev) => prev.map((f) => (f.id === parentFund.id ? updatedFund : f)));
+          }
+        }
+      }
+
       // Save to Local Fallback Sync
       try {
         const saved = localStorage.getItem("bbi_homecoming_2026_history");
@@ -979,52 +1005,109 @@ BBI Homecoming Committee`;
   ) => {
     const fund = earmarkedFunds.find((f) => f.id === fundId);
     const targetAttendee = history.find((h) => h.ref === registrationRef);
-    if (!fund || !targetAttendee) return;
+    if (!fund) {
+      throw new Error(`Source earmarked fund was not found (ID: ${fundId}). Please select an available fund.`);
+    }
+    if (!targetAttendee) {
+      throw new Error(`Registered brother could not be found (Ref: ${registrationRef}). Please select a valid brother.`);
+    }
+
+    const allocAmount = Number(amount);
+    if (isNaN(allocAmount) || allocAmount <= 0) {
+      throw new Error("Please enter a valid amount greater than $0.");
+    }
+    const currentFundRemaining = Number(fund.remainingAmount) || 0;
+    if (allocAmount > currentFundRemaining) {
+      throw new Error(`Cannot apply $${allocAmount.toLocaleString()}. Available fund balance is only $${currentFundRemaining.toLocaleString()}.`);
+    }
 
     const allocId = `ALLOC-${Date.now()}`;
     const newAllocation: EarmarkedFundAllocation = {
       id: allocId,
       registrationRef,
       attendeeName: targetAttendee.formData.fullName,
-      amount,
-      date,
-      notes: notes?.trim() || ""
+      amount: allocAmount,
+      date: date || getLocalDateString(),
+      notes: notes?.trim() || `Applied from Earmarked Fund (${fund.sourceName})`
     };
 
-    const updatedAllocated = (fund.allocatedAmount || 0) + amount;
-    const updatedRemaining = Math.max(0, fund.amount - updatedAllocated);
+    const fundTotalAmount = Number(fund.amount) || 0;
+    const currentFundAllocated = Number(fund.allocatedAmount) || 0;
+    const updatedAllocated = currentFundAllocated + allocAmount;
+    const updatedRemaining = Math.max(0, fundTotalAmount - updatedAllocated);
     const updatedStatus: "available" | "partially_applied" | "fully_applied" =
       updatedRemaining === 0 ? "fully_applied" : "partially_applied";
 
     const updatedFund: EarmarkedFund = {
       ...fund,
-      email: fund.email || "",
-      phone: fund.phone || "",
-      notes: fund.notes || "",
+      amount: fundTotalAmount,
       allocatedAmount: updatedAllocated,
       remainingAmount: updatedRemaining,
       status: updatedStatus,
-      allocations: [...(fund.allocations || []), newAllocation]
+      email: fund.email || "",
+      phone: fund.phone || "",
+      notes: fund.notes || "",
+      allocations: [
+        ...(fund.allocations || []).map((a) => ({
+          id: a.id,
+          registrationRef: a.registrationRef,
+          attendeeName: a.attendeeName,
+          amount: Number(a.amount) || 0,
+          date: a.date,
+          notes: a.notes || ""
+        })),
+        newAllocation
+      ]
     };
 
     // Add PaymentTransaction to registration's ledger
+    // Crucial: getAttendeeTransactions preserves any milestone payments and converts them cleanly
+    const currentTxs = getAttendeeTransactions(targetAttendee);
     const newTransaction: PaymentTransaction = {
       id: `TX-EARMARK-${allocId}`,
-      amount,
-      date,
+      amount: allocAmount,
+      date: date || getLocalDateString(),
       method: fund.method || "Earmarked Treasury",
       notes: notes?.trim() || `Applied from Earmarked Fund (${fund.sourceName})`
     };
 
-    const existingTransactions = targetAttendee.paymentTransactions || [];
     const updatedAttendee: HistoryEntry = {
       ...targetAttendee,
-      paymentTransactions: [...existingTransactions, newTransaction]
+      paymentTransactions: [...currentTxs, newTransaction],
+      payments: {} // Wipe legacy dictionary to ensure single-source-of-truth ledger
     };
 
     // Save to Firestore with clean data guarantees (no undefined values)
     await setDoc(doc(db, "earmarked_funds", fundId), cleanFirestoreData(updatedFund));
     await setDoc(doc(db, "registrations", registrationRef), cleanFirestoreData(updatedAttendee));
+
+    // Save to Local Fallback Sync
+    try {
+      const savedHistory = localStorage.getItem("bbi_homecoming_2026_history");
+      if (savedHistory) {
+        const parsed = JSON.parse(savedHistory);
+        if (Array.isArray(parsed)) {
+          const idx = parsed.findIndex((x) => x.ref === registrationRef);
+          if (idx !== -1) {
+            parsed[idx] = updatedAttendee;
+            localStorage.setItem("bbi_homecoming_2026_history", JSON.stringify(parsed));
+          }
+        }
+      }
+      const savedFunds = localStorage.getItem("bbi_homecoming_2026_earmarked_funds");
+      if (savedFunds) {
+        const parsedFunds = JSON.parse(savedFunds);
+        if (Array.isArray(parsedFunds)) {
+          const fIdx = parsedFunds.findIndex((x) => x.id === fundId);
+          if (fIdx !== -1) {
+            parsedFunds[fIdx] = updatedFund;
+            localStorage.setItem("bbi_homecoming_2026_earmarked_funds", JSON.stringify(parsedFunds));
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Local storage fallback save failed on apply fund:", err);
+    }
 
     // Optimistically update local state
     setEarmarkedFunds((prev) => prev.map((f) => (f.id === fundId ? updatedFund : f)));
@@ -1042,7 +1125,7 @@ BBI Homecoming Committee`;
 
     const updatedAllocations = (fund.allocations || []).filter((a) => a.id !== allocationId);
     const updatedAllocated = Math.max(0, (fund.allocatedAmount || 0) - alloc.amount);
-    const updatedRemaining = fund.amount - updatedAllocated;
+    const updatedRemaining = (fund.amount || 0) - updatedAllocated;
     const updatedStatus: "available" | "partially_applied" | "fully_applied" =
       updatedAllocated === 0 ? "available" : "partially_applied";
 
@@ -1060,23 +1143,59 @@ BBI Homecoming Committee`;
     const targetAttendee = history.find((h) => h.ref === alloc.registrationRef);
     let updatedAttendee: HistoryEntry | null = null;
     if (targetAttendee) {
-      const updatedTxs = (targetAttendee.paymentTransactions || []).filter(
+      const currentTxs = getAttendeeTransactions(targetAttendee);
+      const updatedTxs = currentTxs.filter(
         (tx) => tx.id !== `TX-EARMARK-${allocationId}` && !tx.notes?.includes(alloc.id)
       );
       updatedAttendee = {
         ...targetAttendee,
-        paymentTransactions: updatedTxs
+        paymentTransactions: updatedTxs,
+        payments: {}
       };
     }
 
     await setDoc(doc(db, "earmarked_funds", fundId), cleanFirestoreData(updatedFund));
     if (updatedAttendee) {
       await setDoc(doc(db, "registrations", updatedAttendee.ref), cleanFirestoreData(updatedAttendee));
+
+      try {
+        const savedHistory = localStorage.getItem("bbi_homecoming_2026_history");
+        if (savedHistory) {
+          const parsed = JSON.parse(savedHistory);
+          if (Array.isArray(parsed)) {
+            const idx = parsed.findIndex((x) => x.ref === updatedAttendee!.ref);
+            if (idx !== -1) {
+              parsed[idx] = updatedAttendee;
+              localStorage.setItem("bbi_homecoming_2026_history", JSON.stringify(parsed));
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Local storage fallback sync failed for registration on deallocate:", err);
+      }
+
       setHistory((prev) => prev.map((h) => (h.ref === updatedAttendee!.ref ? updatedAttendee! : h)));
       if (selectedAttendee && selectedAttendee.ref === updatedAttendee.ref) {
         setSelectedAttendee(updatedAttendee);
       }
     }
+
+    try {
+      const savedFunds = localStorage.getItem("bbi_homecoming_2026_earmarked_funds");
+      if (savedFunds) {
+        const parsedFunds = JSON.parse(savedFunds);
+        if (Array.isArray(parsedFunds)) {
+          const fIdx = parsedFunds.findIndex((x) => x.id === fundId);
+          if (fIdx !== -1) {
+            parsedFunds[fIdx] = updatedFund;
+            localStorage.setItem("bbi_homecoming_2026_earmarked_funds", JSON.stringify(parsedFunds));
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Local storage fallback sync failed for earmarked fund on deallocate:", err);
+    }
+
     setEarmarkedFunds((prev) => prev.map((f) => (f.id === fundId ? updatedFund : f)));
   };
 
