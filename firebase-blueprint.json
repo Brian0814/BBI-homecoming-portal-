@@ -96,12 +96,36 @@
         }
       },
       "required": ["ref", "date", "formData"]
+    },
+    "EarmarkedFund": {
+      "title": "EarmarkedFund",
+      "description": "Earmarked or holding chapter treasury funds not yet attached to a specific registration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "amount": { "type": "number" },
+        "allocatedAmount": { "type": "number" },
+        "remainingAmount": { "type": "number" },
+        "sourceName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "date": { "type": "string" },
+        "method": { "type": "string" },
+        "notes": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "amount", "allocatedAmount", "remainingAmount", "sourceName", "date", "status"]
     }
   },
   "firestore": {
     "/registrations/{registrationId}": {
       "schema": "Registration",
       "description": "Collection of all brother packages registration submissions"
+    },
+    "/earmarked_funds/{fundId}": {
+      "schema": "EarmarkedFund",
+      "description": "Collection of earmarked treasury funds for future registration application"
     }
   }
 }

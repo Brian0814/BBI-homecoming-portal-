@@ -114,6 +114,31 @@ export interface PaymentTransaction {
   notes?: string;
 }
 
+export interface EarmarkedFundAllocation {
+  id: string;
+  registrationRef: string;
+  attendeeName: string;
+  amount: number;
+  date: string;
+  notes?: string;
+}
+
+export interface EarmarkedFund {
+  id: string;
+  amount: number;
+  allocatedAmount: number;
+  remainingAmount: number;
+  sourceName: string;
+  email?: string;
+  phone?: string;
+  date: string;
+  method: string;
+  notes?: string;
+  status: "available" | "partially_applied" | "fully_applied";
+  createdAt: string;
+  allocations: EarmarkedFundAllocation[];
+}
+
 export interface EmailLogEntry {
   id: string;
   sentAt: string;

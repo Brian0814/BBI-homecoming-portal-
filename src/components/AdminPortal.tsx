@@ -4,12 +4,22 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { OrderForm, PACKAGE_OPTIONS, SHIRT_SIZES, STATE_LIST, HistoryEntry, EmailLogEntry, PaymentTransaction } from "../types";
+import { 
+  OrderForm, 
+  PACKAGE_OPTIONS, 
+  SHIRT_SIZES, 
+  STATE_LIST, 
+  HistoryEntry, 
+  EmailLogEntry, 
+  PaymentTransaction,
+  EarmarkedFund,
+  EarmarkedFundAllocation 
+} from "../types";
 import { 
   Users, Trash2, Search, Download, Printer, ArrowUpDown, ChevronDown, 
   Layers, CreditCard, Sparkles, Filter, MoreHorizontal, ShoppingCart, 
   MapPin, Phone, Mail, FileText, ArrowLeft, Ticket, ShoppingBag, Eye, Calendar, X,
-  Send, Copy, Check, Edit, AlertCircle, ArrowLeftRight, PackageCheck, Package, RefreshCw, AlertTriangle, Zap, Clock
+  Send, Copy, Check, Edit, AlertCircle, ArrowLeftRight, PackageCheck, Package, RefreshCw, AlertTriangle, Zap, Clock, DollarSign, RotateCcw
 } from "lucide-react";
 import { 
   getPaymentMilestones, 
@@ -19,6 +29,7 @@ import {
   formatDisplayDate 
 } from "../lib/paymentUtils";
 import { MassEmailModal } from "./MassEmailModal";
+import { EarmarkedFundsModal } from "./EarmarkedFundsModal";
 import { db, handleFirestoreError, OperationType } from "../lib/firebase";
 import { collection, query, onSnapshot, doc, setDoc, deleteDoc, getDoc } from "firebase/firestore";
 
@@ -130,10 +141,32 @@ const SEED_MOCK_DATA: HistoryEntry[] = [
   }
 ];
 
+const SEED_EARMARKED_DATA: EarmarkedFund[] = [
+  {
+    id: "EARMARK-INIT01",
+    amount: 250,
+    allocatedAmount: 0,
+    remainingAmount: 250,
+    sourceName: "Bro. Marcus Vance",
+    email: "marcus.vance@alumni.org",
+    phone: "(313) 555-0194",
+    date: "2026-06-10",
+    method: "Zelle",
+    notes: "Advance holding deposit for Langston Taylor package + custom jacket",
+    status: "available",
+    createdAt: "2026-06-10T14:30:00.000Z",
+    allocations: []
+  }
+];
+
 export default function AdminPortal({
   onBackToForm
 }: AdminPortalProps) {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [earmarkedFunds, setEarmarkedFunds] = useState<EarmarkedFund[]>([]);
+  const [isEarmarkedModalOpen, setIsEarmarkedModalOpen] = useState(false);
+  const [earmarkInitialTargetRef, setEarmarkInitialTargetRef] = useState<string | undefined>(undefined);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [filterPackage, setFilterPackage] = useState("all");
   const [filterJacket, setFilterJacket] = useState("all");
@@ -236,7 +269,62 @@ export default function AdminPortal({
       console.error("Firestore onSnapshot error:", error);
     });
 
-    return () => unsubscribe();
+    // 3. Load earmarked funds with real-time Firestore sync + local fallback
+    try {
+      const savedEarmarked = localStorage.getItem("bbi_homecoming_2026_earmarked_funds");
+      if (savedEarmarked) {
+        const parsed = JSON.parse(savedEarmarked);
+        if (Array.isArray(parsed)) {
+          setEarmarkedFunds(parsed);
+        }
+      }
+    } catch (e) {
+      console.warn("Could not load local earmarked funds fallback:", e);
+    }
+
+    const qEarmarked = query(collection(db, "earmarked_funds"));
+    const unsubEarmarked = onSnapshot(qEarmarked, async (snapshot) => {
+      const fundsData: EarmarkedFund[] = [];
+      snapshot.forEach((docSnap) => {
+        fundsData.push(docSnap.data() as EarmarkedFund);
+      });
+
+      if (fundsData.length === 0) {
+        try {
+          const seedMetaRef = doc(db, "metadata", "earmarked_seeding_status");
+          const seedMetaSnap = await getDoc(seedMetaRef);
+          if (!seedMetaSnap.exists()) {
+            await setDoc(seedMetaRef, { seeded: true });
+            for (const entry of SEED_EARMARKED_DATA) {
+              await setDoc(doc(db, "earmarked_funds", entry.id), entry);
+            }
+            setEarmarkedFunds(SEED_EARMARKED_DATA);
+            localStorage.setItem("bbi_homecoming_2026_earmarked_funds", JSON.stringify(SEED_EARMARKED_DATA));
+          } else {
+            setEarmarkedFunds([]);
+            localStorage.setItem("bbi_homecoming_2026_earmarked_funds", JSON.stringify([]));
+          }
+        } catch (err) {
+          console.error("Failed to check earmarked seeding status:", err);
+          setEarmarkedFunds([]);
+        }
+      } else {
+        const sortedFunds = fundsData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setEarmarkedFunds(sortedFunds);
+        try {
+          localStorage.setItem("bbi_homecoming_2026_earmarked_funds", JSON.stringify(sortedFunds));
+        } catch (e) {
+          console.error("Failed to update localStorage earmarked funds backup:", e);
+        }
+      }
+    }, (error) => {
+      console.error("Firestore earmarked_funds onSnapshot error:", error);
+    });
+
+    return () => {
+      unsubscribe();
+      unsubEarmarked();
+    };
   }, []);
 
   const calculateGrandTotal = (formData: OrderForm) => {
@@ -831,6 +919,146 @@ BBI Homecoming Committee`;
     window.print();
   };
 
+  // Earmarked Funds Management Operations
+  const handleAddEarmarkedFund = async (data: {
+    amount: number;
+    sourceName: string;
+    email?: string;
+    phone?: string;
+    date: string;
+    method: string;
+    notes?: string;
+  }) => {
+    const newId = `EARMARK-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+    const newFund: EarmarkedFund = {
+      id: newId,
+      amount: data.amount,
+      allocatedAmount: 0,
+      remainingAmount: data.amount,
+      sourceName: data.sourceName,
+      email: data.email,
+      phone: data.phone,
+      date: data.date,
+      method: data.method,
+      notes: data.notes,
+      status: "available",
+      createdAt: new Date().toISOString(),
+      allocations: []
+    };
+
+    await setDoc(doc(db, "earmarked_funds", newId), newFund);
+    setEarmarkedFunds((prev) => [newFund, ...prev]);
+  };
+
+  const handleDeleteEarmarkedFund = async (fundId: string) => {
+    await deleteDoc(doc(db, "earmarked_funds", fundId));
+    setEarmarkedFunds((prev) => prev.filter((f) => f.id !== fundId));
+  };
+
+  const handleApplyEarmarkedFundToRegistration = async (
+    fundId: string,
+    registrationRef: string,
+    amount: number,
+    date: string,
+    notes: string
+  ) => {
+    const fund = earmarkedFunds.find((f) => f.id === fundId);
+    const targetAttendee = history.find((h) => h.ref === registrationRef);
+    if (!fund || !targetAttendee) return;
+
+    const allocId = `ALLOC-${Date.now()}`;
+    const newAllocation: EarmarkedFundAllocation = {
+      id: allocId,
+      registrationRef,
+      attendeeName: targetAttendee.formData.fullName,
+      amount,
+      date,
+      notes
+    };
+
+    const updatedAllocated = (fund.allocatedAmount || 0) + amount;
+    const updatedRemaining = Math.max(0, fund.amount - updatedAllocated);
+    const updatedStatus: "available" | "partially_applied" | "fully_applied" =
+      updatedRemaining === 0 ? "fully_applied" : "partially_applied";
+
+    const updatedFund: EarmarkedFund = {
+      ...fund,
+      allocatedAmount: updatedAllocated,
+      remainingAmount: updatedRemaining,
+      status: updatedStatus,
+      allocations: [...(fund.allocations || []), newAllocation]
+    };
+
+    // Add PaymentTransaction to registration's ledger
+    const newTransaction: PaymentTransaction = {
+      id: `TX-EARMARK-${allocId}`,
+      amount,
+      date,
+      method: fund.method || "Earmarked Treasury",
+      notes: notes || `Applied from Earmarked Fund (${fund.sourceName})`
+    };
+
+    const existingTransactions = targetAttendee.paymentTransactions || [];
+    const updatedAttendee: HistoryEntry = {
+      ...targetAttendee,
+      paymentTransactions: [...existingTransactions, newTransaction]
+    };
+
+    // Save to Firestore
+    await setDoc(doc(db, "earmarked_funds", fundId), updatedFund);
+    await setDoc(doc(db, "registrations", registrationRef), updatedAttendee);
+
+    // Optimistically update local state
+    setEarmarkedFunds((prev) => prev.map((f) => (f.id === fundId ? updatedFund : f)));
+    setHistory((prev) => prev.map((h) => (h.ref === registrationRef ? updatedAttendee : h)));
+    if (selectedAttendee && selectedAttendee.ref === registrationRef) {
+      setSelectedAttendee(updatedAttendee);
+    }
+  };
+
+  const handleDeallocateFund = async (fundId: string, allocationId: string) => {
+    const fund = earmarkedFunds.find((f) => f.id === fundId);
+    if (!fund) return;
+    const alloc = (fund.allocations || []).find((a) => a.id === allocationId);
+    if (!alloc) return;
+
+    const updatedAllocations = (fund.allocations || []).filter((a) => a.id !== allocationId);
+    const updatedAllocated = Math.max(0, (fund.allocatedAmount || 0) - alloc.amount);
+    const updatedRemaining = fund.amount - updatedAllocated;
+    const updatedStatus: "available" | "partially_applied" | "fully_applied" =
+      updatedAllocated === 0 ? "available" : "partially_applied";
+
+    const updatedFund: EarmarkedFund = {
+      ...fund,
+      allocatedAmount: updatedAllocated,
+      remainingAmount: updatedRemaining,
+      status: updatedStatus,
+      allocations: updatedAllocations
+    };
+
+    const targetAttendee = history.find((h) => h.ref === alloc.registrationRef);
+    let updatedAttendee: HistoryEntry | null = null;
+    if (targetAttendee) {
+      const updatedTxs = (targetAttendee.paymentTransactions || []).filter(
+        (tx) => tx.id !== `TX-EARMARK-${allocationId}` && !tx.notes?.includes(alloc.id)
+      );
+      updatedAttendee = {
+        ...targetAttendee,
+        paymentTransactions: updatedTxs
+      };
+    }
+
+    await setDoc(doc(db, "earmarked_funds", fundId), updatedFund);
+    if (updatedAttendee) {
+      await setDoc(doc(db, "registrations", updatedAttendee.ref), updatedAttendee);
+      setHistory((prev) => prev.map((h) => (h.ref === updatedAttendee!.ref ? updatedAttendee! : h)));
+      if (selectedAttendee && selectedAttendee.ref === updatedAttendee.ref) {
+        setSelectedAttendee(updatedAttendee);
+      }
+    }
+    setEarmarkedFunds((prev) => prev.map((f) => (f.id === fundId ? updatedFund : f)));
+  };
+
   // Sort toggle routine
   const toggleSort = (field: "date" | "name" | "total") => {
     if (activeSortField === field) {
@@ -844,8 +1072,14 @@ BBI Homecoming Committee`;
   // Statistics summaries calculations
   const totalEntries = history.length;
   const totalRevenue = history.reduce((sum, item) => sum + calculateGrandTotal(item.formData), 0);
-  const totalPaidOverall = history.reduce((sum, item) => sum + getAttendeePaymentStats(item).totalPaid, 0);
-  const totalOutstandingBalanceOverall = totalRevenue - totalPaidOverall;
+  const totalPaidFromRegistrations = history.reduce((sum, item) => sum + getAttendeePaymentStats(item).totalPaid, 0);
+  const totalUnallocatedEarmarked = earmarkedFunds.reduce((sum, f) => sum + (f.remainingAmount || 0), 0);
+  const totalEarmarkedReceived = earmarkedFunds.reduce((sum, f) => sum + (f.amount || 0), 0);
+
+  // Total Treasury Payments Collected: registered payments plus unattached earmarked money waiting to be applied!
+  const totalTreasuryPaymentsCollected = totalPaidFromRegistrations + totalUnallocatedEarmarked;
+  const totalPaidOverall = totalTreasuryPaymentsCollected;
+  const totalOutstandingBalanceOverall = Math.max(0, totalRevenue - totalPaidFromRegistrations);
   const totalJacketOrders = history.filter((x) => x.formData.addDetroitJacket).length;
   const totalTicketsSold = history.filter((x) => x.formData.addFootballTicket).length;
 
@@ -903,6 +1137,27 @@ BBI Homecoming Committee`;
           <button
             type="button"
             onClick={() => {
+              setEarmarkInitialTargetRef(undefined);
+              setIsEarmarkedModalOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-blue-200 bg-blue-50/70 hover:bg-blue-100/70 text-brand-blue font-black text-xs shadow-2xs hover:shadow-xs cursor-pointer transition-all"
+            title="Manage earmarked unattached treasury funds"
+          >
+            <DollarSign className="w-3.5 h-3.5 text-brand-blue" />
+            <span>Earmarked Funds</span>
+            {totalUnallocatedEarmarked > 0 ? (
+              <span className="bg-brand-blue text-white text-[10px] px-2 py-0.5 rounded-full font-mono font-bold">
+                ${totalUnallocatedEarmarked.toLocaleString()}
+              </span>
+            ) : earmarkedFunds.length > 0 ? (
+              <span className="bg-blue-200/60 text-brand-blue text-[10px] px-1.5 py-0.5 rounded-full font-mono font-bold">
+                {earmarkedFunds.length}
+              </span>
+            ) : null}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
               setMassEmailInitialRef(undefined);
               setIsMassEmailModalOpen(true);
             }}
@@ -951,9 +1206,23 @@ BBI Homecoming Committee`;
                   <span className="text-[9px] font-mono text-slate-500 block">Beta Beta Iota Chapter</span>
                 </div>
               </div>
-              <span className="text-[9px] bg-slate-900 text-brand-blue-light border border-slate-800 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                Financial Hub
-              </span>
+              <div className="flex items-center gap-2">
+                {totalUnallocatedEarmarked > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEarmarkInitialTargetRef(undefined);
+                      setIsEarmarkedModalOpen(true);
+                    }}
+                    className="text-[9px] bg-emerald-950/80 text-emerald-300 border border-emerald-800/80 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider hover:bg-emerald-900/80 cursor-pointer transition-colors"
+                  >
+                    💰 ${totalUnallocatedEarmarked.toLocaleString()} Earmarked
+                  </button>
+                )}
+                <span className="text-[9px] bg-slate-900 text-brand-blue-light border border-slate-800 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                  Financial Hub
+                </span>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 items-center">
@@ -970,11 +1239,39 @@ BBI Homecoming Committee`;
 
               <div className="sm:col-span-6 space-y-3">
                 {/* Payments Collected segment */}
-                <div className="flex items-center justify-between text-xs">
+                <div className="flex items-start justify-between text-xs gap-3">
                   <div className="space-y-0.5">
                     <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider block">Treasury Payments Collected</span>
-                    <span className="font-mono text-base font-extrabold text-brand-blue-light">${totalPaidOverall.toLocaleString()}</span>
+                    <span className="font-mono text-xl font-black text-brand-blue-light block">
+                      ${totalTreasuryPaymentsCollected.toLocaleString()}
+                    </span>
+                    <div className="flex items-center gap-1.5 text-[10px] text-slate-400 pt-0.5 flex-wrap">
+                      <span>Regs: <strong className="text-slate-300 font-mono">${totalPaidFromRegistrations.toLocaleString()}</strong></span>
+                      <span className="text-slate-600">•</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEarmarkInitialTargetRef(undefined);
+                          setIsEarmarkedModalOpen(true);
+                        }}
+                        className="text-emerald-400 hover:text-emerald-300 font-semibold underline decoration-emerald-500/40 flex items-center gap-0.5 cursor-pointer"
+                        title="Manage earmarked unattached treasury funds"
+                      >
+                        <span>Earmarked: <strong className="font-mono text-emerald-300">${totalUnallocatedEarmarked.toLocaleString()}</strong></span>
+                      </button>
+                    </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEarmarkInitialTargetRef(undefined);
+                      setIsEarmarkedModalOpen(true);
+                    }}
+                    className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-750 hover:border-slate-600 text-brand-blue-light hover:text-white rounded-lg text-[10.5px] font-bold cursor-pointer transition-colors whitespace-nowrap shadow-xs"
+                    title="Manage or earmark funds for future use"
+                  >
+                    + Earmark
+                  </button>
                 </div>
 
                 {/* Outstanding Balance segment */}
@@ -1211,18 +1508,18 @@ BBI Homecoming Committee`;
 
         <div className="overflow-x-auto font-sans">
           {processedRecords.length > 0 ? (
-            <table className="min-w-full divide-y divide-gray-200 text-xs">
+            <table className="w-full min-w-[1020px] divide-y divide-gray-200 text-xs">
               <thead>
                 <tr className="bg-slate-50 text-gray-500 uppercase font-bold tracking-wider text-[10px] border-b border-gray-200">
-                  <th className="px-6 py-3.5 text-left">Member Name</th>
-                  <th className="px-6 py-3.5 text-left hidden sm:table-cell">Reg Category</th>
-                  <th className="px-6 py-3.5 text-center">Add-Ons</th>
-                  <th className="px-6 py-3.5 text-center">Payment Status</th>
-                  <th className="px-6 py-3.5 text-right">Sum Owed</th>
-                  <th className="px-6 py-3.5 text-right">Action</th>
+                  <th className="px-6 py-4 text-left w-[26%] min-w-[230px]">Member Details</th>
+                  <th className="px-6 py-4 text-left w-[22%] min-w-[200px] hidden sm:table-cell">Registration Package</th>
+                  <th className="px-6 py-4 text-center w-[14%] min-w-[130px]">Add-Ons</th>
+                  <th className="px-6 py-4 text-center w-[14%] min-w-[130px]">Payment Status</th>
+                  <th className="px-6 py-4 text-right w-[11%] min-w-[110px]">Sum Owed</th>
+                  <th className="px-6 py-4 text-right w-[13%] min-w-[150px]">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody className="divide-y divide-gray-200 bg-white">
                 {processedRecords.map((item) => {
                   const pkg = PACKAGE_OPTIONS.find((p) => p.id === item.formData.selectedPackageId);
                   const isJacket = item.formData.addDetroitJacket;
@@ -1239,8 +1536,8 @@ BBI Homecoming Committee`;
                     >
                       {/* Member Name details */}
                       <td className="px-6 py-4">
-                        <div className="flex items-center gap-2">
-                          <p className="font-extrabold text-slate-900 text-[13px]">{item.formData.fullName}</p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="font-extrabold text-slate-900 text-[13.5px]">{item.formData.fullName}</p>
                           {item.lastEmailSentAt && (() => {
                             const lastLog = item.emailHistory && item.emailHistory.length > 0
                               ? item.emailHistory[item.emailHistory.length - 1]
@@ -1265,19 +1562,19 @@ BBI Homecoming Committee`;
                             );
                           })()}
                         </div>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="inline-flex items-center gap-1 text-[9.5px] font-mono text-gray-550 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-sm uppercase font-bold">
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                          <span className="inline-flex items-center gap-1 text-[9.5px] font-mono text-gray-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-sm uppercase font-bold">
                             🔑 {item.ref}
                           </span>
-                          <span className="text-[10.5px] text-slate-400 truncate max-w-[140px]">{item.formData.email}</span>
+                          <span className="text-[11px] text-slate-500 font-medium break-all">{item.formData.email}</span>
                         </div>
                       </td>
 
                       {/* Reg Package type */}
                       <td className="px-6 py-4 hidden sm:table-cell">
-                        <p className="font-bold text-slate-800 text-[12px]">{pkg?.name || "None Chosen"}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[10px] text-gray-400 font-bold">{item.formData.shirtSize ? `Size ${item.formData.shirtSize} T-Shirt` : ""}</span>
+                        <p className="font-bold text-slate-800 text-[12.5px]">{pkg?.name || "None Chosen"}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-[10.5px] text-gray-500 font-bold">{item.formData.shirtSize ? `Size ${item.formData.shirtSize} T-Shirt` : ""}</span>
                           <button
                             type="button"
                             onClick={(e) => {
@@ -1294,19 +1591,19 @@ BBI Homecoming Committee`;
 
                       {/* Add-on badges */}
                       <td className="px-6 py-4 text-center">
-                        <div className="inline-flex flex-wrap gap-1 items-center justify-center">
+                        <div className="inline-flex flex-wrap gap-1.5 items-center justify-center">
                           {isTicket && (
-                            <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 text-[9px] font-black uppercase px-2 py-0.5 rounded-sm flex items-center gap-0.5" title="Football ticket purchased">
+                            <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 text-[9.5px] font-black uppercase px-2 py-0.5 rounded-sm flex items-center gap-0.5" title="Football ticket purchased">
                               <Ticket className="w-2.5 h-2.5 text-emerald-600" /> Ticket
                             </span>
                           )}
                           {isJacket && (
-                            <span className="bg-indigo-50 text-indigo-800 border border-indigo-200 text-[9px] font-black uppercase px-2 py-0.5 rounded-sm flex items-center gap-0.5" title="Carhartt Style Jacket purchased">
+                            <span className="bg-indigo-50 text-indigo-800 border border-indigo-200 text-[9.5px] font-black uppercase px-2 py-0.5 rounded-sm flex items-center gap-0.5" title="Carhartt Style Jacket purchased">
                               <ShoppingBag className="w-2.5 h-2.5 text-indigo-600" /> Jacket ({item.formData.jacketSize})
                             </span>
                           )}
                           {!isTicket && !isJacket && (
-                            <span className="text-[9.5px] text-gray-350 font-bold bg-slate-50 border border-slate-150 px-2 py-0.5 rounded-xs">No Addons</span>
+                            <span className="text-[9.5px] text-gray-400 font-bold bg-slate-50 border border-slate-150 px-2 py-0.5 rounded-xs">No Addons</span>
                           )}
                         </div>
                       </td>
@@ -1325,7 +1622,7 @@ BBI Homecoming Committee`;
                                 }`} />
                                 {statusLabel}
                               </span>
-                              <span className="text-[9.5px] text-slate-500 font-mono font-bold mt-1 tracking-tight">
+                              <span className="text-[10px] text-slate-600 font-mono font-bold mt-1 tracking-tight">
                                 ${totalPaid.toLocaleString()} / ${total.toLocaleString()}
                               </span>
                             </div>
@@ -1335,7 +1632,7 @@ BBI Homecoming Committee`;
 
                       {/* SUM total */}
                       <td className="px-6 py-4 text-right font-mono">
-                        <p className="font-black text-slate-950 text-[13.5px]">${total}</p>
+                        <p className="font-black text-slate-950 text-[14px]">${total}</p>
                         {(() => {
                           const { depositDue, balanceDue } = calculateDepositAndBalance(item.formData);
                           return (
@@ -1874,6 +2171,31 @@ BBI Homecoming Committee`;
                             </div>
                           )}
                         </div>
+
+                        {/* Apply Earmarked Money option if unallocated holding money exists */}
+                        {totalUnallocatedEarmarked > 0 && balanceDue > 0 && (
+                          <div className="bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl flex items-center justify-between text-xs gap-2">
+                            <div className="space-y-0.5">
+                              <span className="text-[9.5px] font-black uppercase text-emerald-800 tracking-wide flex items-center gap-1">
+                                <DollarSign className="w-3 h-3 text-emerald-600" />
+                                Earmarked Funds Available (${totalUnallocatedEarmarked.toLocaleString()})
+                              </span>
+                              <p className="text-[10px] text-emerald-700 leading-tight">
+                                Apply unassigned holding funds directly to this brother's balance.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEarmarkInitialTargetRef(selectedAttendee.ref);
+                                setIsEarmarkedModalOpen(true);
+                              }}
+                              className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-[10.5px] cursor-pointer shadow-xs transition-colors flex-shrink-0 whitespace-nowrap"
+                            >
+                              Apply Earmarked
+                            </button>
+                          </div>
+                        )}
 
                         {/* Add Payment Form / Trigger Button */}
                         <div className="space-y-2">
@@ -2971,6 +3293,22 @@ BBI Homecoming Committee`;
         }}
         allAttendees={history}
         initialSelectedRef={massEmailInitialRef}
+      />
+
+      {/* Earmarked Treasury Funds Management Modal */}
+      <EarmarkedFundsModal
+        isOpen={isEarmarkedModalOpen}
+        onClose={() => {
+          setIsEarmarkedModalOpen(false);
+          setEarmarkInitialTargetRef(undefined);
+        }}
+        earmarkedFunds={earmarkedFunds}
+        history={history}
+        onAddFund={handleAddEarmarkedFund}
+        onDeleteFund={handleDeleteEarmarkedFund}
+        onApplyFundToRegistration={handleApplyEarmarkedFundToRegistration}
+        onDeallocateFund={handleDeallocateFund}
+        initialTargetRef={earmarkInitialTargetRef}
       />
     </div>
   );

@@ -472,7 +472,7 @@ export default function App() {
         <div className="absolute top-0 right-0 w-80 h-80 bg-brand-blue-light/10 rounded-full translate-x-20 -translate-y-20 pointer-events-none" />
         <div className="absolute bottom-0 left-0 w-60 h-60 bg-brand-blue-dark/20 rounded-full -translate-x-10 translate-y-10 pointer-events-none" />
 
-        <div className="max-w-4xl mx-auto px-4 py-6 sm:py-8 relative z-10">
+        <div className={`${isAdminView && isAdminAuthenticated ? "max-w-[1440px]" : "max-w-4xl"} mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 relative z-10 transition-all duration-300`}>
           <div className="flex flex-col sm:flex-row items-center justify-between gap-5 text-center sm:text-left">
             <div className="flex flex-col sm:flex-row items-center gap-5">
               {/* Crest SVG Emblem */}
@@ -524,7 +524,7 @@ export default function App() {
       </header>
 
       {/* 2. Main content block - Toggles between Admin dashboard and Intake form */}
-      <main className="max-w-4xl w-full mx-auto px-4 py-8 flex-1">
+      <main className={`${isAdminView && isAdminAuthenticated ? "max-w-[1440px]" : "max-w-4xl"} w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 transition-all duration-300`}>
 
         {isAdminView ? (
           !isAdminAuthenticated ? (
