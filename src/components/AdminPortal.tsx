@@ -14,23 +14,32 @@ import {
   PaymentTransaction,
   EarmarkedFund,
   EarmarkedFundAllocation,
-  deduplicateEarmarkedFunds 
+  deduplicateEarmarkedFunds,
+  SystemEmailTemplate
 } from "../types";
 import { 
   Users, Trash2, Search, Download, Printer, ArrowUpDown, ChevronDown, 
   Layers, CreditCard, Sparkles, Filter, MoreHorizontal, ShoppingCart, 
   MapPin, Phone, Mail, FileText, ArrowLeft, Ticket, ShoppingBag, Eye, Calendar, X,
-  Send, Copy, Check, Edit, AlertCircle, ArrowLeftRight, PackageCheck, Package, RefreshCw, AlertTriangle, Zap, Clock, DollarSign, RotateCcw
+  Send, Copy, Check, Edit, AlertCircle, ArrowLeftRight, PackageCheck, Package, RefreshCw, AlertTriangle, Zap, Clock, DollarSign, RotateCcw, Edit3
 } from "lucide-react";
 import { 
   getPaymentMilestones, 
   getAttendeeTransactions, 
   getAttendeePaymentStats, 
   getLocalDateString, 
-  formatDisplayDate 
+  formatDisplayDate,
+  sanitizeEmailText
 } from "../lib/paymentUtils";
+import { 
+  DEFAULT_EMAIL_TEMPLATES, 
+  loadEmailTemplatesFromStorage, 
+  saveEmailTemplatesToStorage, 
+  renderSystemEmail 
+} from "../lib/emailTemplates";
 import { MassEmailModal } from "./MassEmailModal";
 import { EarmarkedFundsModal } from "./EarmarkedFundsModal";
+import { EmailTemplatesModal } from "./EmailTemplatesModal";
 import { db, handleFirestoreError, OperationType, cleanFirestoreData } from "../lib/firebase";
 import { collection, query, onSnapshot, doc, setDoc, deleteDoc, getDoc } from "firebase/firestore";
 
@@ -99,7 +108,7 @@ const SEED_MOCK_DATA: HistoryEntry[] = [
       phone: "(313) 489-3281",
       shippingAddress: {
         street: "88 University Dr, Box 44",
-        city: "Detroit",
+        city: "Southfield",
         state: "MI",
         zipCode: "48201"
       },
@@ -183,6 +192,11 @@ export default function AdminPortal({
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isMassEmailModalOpen, setIsMassEmailModalOpen] = useState(false);
   const [massEmailInitialRef, setMassEmailInitialRef] = useState<string | undefined>(undefined);
+
+  // System Email Templates State
+  const [emailTemplates, setEmailTemplates] = useState<SystemEmailTemplate[]>(() => loadEmailTemplatesFromStorage());
+  const [isEmailTemplatesModalOpen, setIsEmailTemplatesModalOpen] = useState(false);
+  const [emailTemplatesModalInitialId, setEmailTemplatesModalInitialId] = useState<string>("paid_in_full_receipt");
 
   // Custom Payment Form States
   const [payAmount, setPayAmount] = useState("");
@@ -341,9 +355,34 @@ export default function AdminPortal({
       console.error("Firestore earmarked_funds onSnapshot error:", error);
     });
 
+    // 4. Real-time sync for system email templates
+    const qTemplates = query(collection(db, "email_templates"));
+    const unsubTemplates = onSnapshot(qTemplates, (snapshot) => {
+      if (!snapshot.empty) {
+        const map = new Map<string, SystemEmailTemplate>();
+        DEFAULT_EMAIL_TEMPLATES.forEach(d => map.set(d.id, d));
+        snapshot.forEach(docSnap => {
+          const data = docSnap.data() as SystemEmailTemplate;
+          if (data && data.id) {
+            map.set(data.id, {
+              ...data,
+              subject: sanitizeEmailText(data.subject || ""),
+              body: sanitizeEmailText(data.body || "")
+            });
+          }
+        });
+        const merged = Array.from(map.values());
+        setEmailTemplates(merged);
+        saveEmailTemplatesToStorage(merged);
+      }
+    }, (err) => {
+      console.warn("Firestore email_templates onSnapshot warning:", err);
+    });
+
     return () => {
       unsubscribe();
       unsubEarmarked();
+      unsubTemplates();
     };
   }, []);
 
@@ -369,138 +408,29 @@ export default function AdminPortal({
     return { total, depositDue, balanceDue };
   };
 
+  // System Email Generators (Sanitized and driven by editable SystemEmailTemplates)
+  const generateProfileEmail = (attendee: HistoryEntry) => {
+    return renderSystemEmail("profile_verification", attendee, emailTemplates);
+  };
+
+  const generatePaidInFullEmail = (attendee: HistoryEntry) => {
+    return renderSystemEmail("paid_in_full_receipt", attendee, emailTemplates);
+  };
+
+  const generateBalanceDueEmail = (attendee: HistoryEntry) => {
+    return renderSystemEmail("balance_due_milestones", attendee, emailTemplates);
+  };
+
   const generateProfileText = (attendee: HistoryEntry) => {
-    const { total } = calculateDepositAndBalance(attendee.formData);
-    const pkg = PACKAGE_OPTIONS.find((p) => p.id === attendee.formData.selectedPackageId);
-    const packageName = pkg ? pkg.name : "Unknown Package";
-    const milestones = getPaymentMilestones(attendee.formData.selectedPackageId, attendee.formData.addDetroitJacket);
-
-    const milestoneLines = milestones
-      .map(
-        (m) =>
-          `  • ${m.date} Milestone: $${m.amount} (${m.amount > 0 ? "Installment Scheduled" : "Fully cleared • No installment"})`
-      )
-      .join("\n");
-
-    let jacketSection = "";
-    if (attendee.formData.addDetroitJacket) {
-      jacketSection = `\n\n[JACKET LINE EMBROIDERY & SIZING]
-  • Jacket Size: ${attendee.formData.jacketSize || "N/A"}
-  • Crossing Year: ${attendee.formData.jacketCrossingYear || "N/A"}
-  • Line Name: "${attendee.formData.jacketLineName || ""}"
-  • Entire Line Name: "${attendee.formData.jacketEntireLineName || ""}"
-  • Line Number: ${attendee.formData.jacketLineNumber || "N/A"}`;
-    }
-
-    return `Dear Brother ${attendee.formData.fullName.trim()},
-
-We have successfully processed your registration record for BBI Homecoming 2026. Here is a copy of your verified attendee profile sheet:
-
---------------------------------------------------
-REGISTRANT PROFILE SHEET
---------------------------------------------------
-Reference ID: ${attendee.ref}
-Registered On: ${new Date(attendee.date).toLocaleDateString()} at ${new Date(attendee.date).toLocaleTimeString()}
-
-[CONTACT INFORMATION]
-  • Full Name: ${attendee.formData.fullName}
-  • Email: ${attendee.formData.email}
-  • Phone: ${attendee.formData.phone}
-
-[PACKAGE & TREASURY INFORMATION]
-  • Selected Package: ${packageName}
-  • Total Registered Cost: $${total}
-
-[TREASURY PAYMENT MILESTONES]
-${milestoneLines}
-
-[MAILING COORDINATES]
-  • Street: ${attendee.formData.shippingAddress.street}
-  • City/State/Zip: ${attendee.formData.shippingAddress.city}, ${attendee.formData.shippingAddress.state} ${attendee.formData.shippingAddress.zipCode}
-
-[CLOTHING SIZING]
-  • Core Shirt Size: ${attendee.formData.shirtSize}${jacketSection}
-
-[COMMITTEE NOTES / WISHES]
-  • Special Requests: ${attendee.formData.specialRequests || "None provided"}
-
---------------------------------------------------
-If any details need adjustment, please let us know immediately. Looking forward to welcoming you home!
-
-Best regards,
-BBI Homecoming Committee`;
+    return generateProfileEmail(attendee).body;
   };
 
   const generatePaidInFullText = (attendee: HistoryEntry) => {
-    const pkg = PACKAGE_OPTIONS.find((p) => p.id === attendee.formData.selectedPackageId);
-    const packageName = pkg ? pkg.name : "Unknown Package";
-    const grandTotal = calculateGrandTotal(attendee.formData);
-    const shirtSize = attendee.formData.shirtSize;
-    let jacketSection = "";
-    if (attendee.formData.addDetroitJacket) {
-      jacketSection = `\n  • Custom Detroit Jacket: Size ${attendee.formData.jacketSize} (Line Name: "${attendee.formData.jacketLineName}", Line #: ${attendee.formData.jacketLineNumber})`;
-    }
-
-    return `Dear Brother ${attendee.formData.fullName.trim()},
-
-This is a receipt confirming that your registration for the BBI Homecoming Reunion 2026 is officially PAID IN FULL!
-
-We have updated your ledger and your balance is $0.00. Thank you for your prompt payments and support.
-
-[YOUR REGISTRATION DETAILS]
-  • Reference ID: ${attendee.ref}
-  • Selected Package: ${packageName}
-  • T-Shirt Size: ${shirtSize}${jacketSection}
-  • Total Paid: $${grandTotal.toLocaleString()}
-  • Balance Remaining: $0.00
-
-Thank you for your active participation. We look forward to welcoming you home to Detroit!
-
-Best regards,
-BBI Homecoming Committee`;
+    return generatePaidInFullEmail(attendee).body;
   };
 
   const generateBalanceDueText = (attendee: HistoryEntry) => {
-    const pkg = PACKAGE_OPTIONS.find((p) => p.id === attendee.formData.selectedPackageId);
-    const packageName = pkg ? pkg.name : "Unknown Package";
-    const grandTotal = calculateGrandTotal(attendee.formData);
-    const { totalPaid, balanceDue, transactions } = getAttendeePaymentStats(attendee);
-    const milestones = getPaymentMilestones(attendee.formData.selectedPackageId, attendee.formData.addDetroitJacket);
-
-    const paymentListText = transactions.length > 0 
-      ? transactions.map(tx => `  • $${tx.amount.toLocaleString()} paid on ${formatDisplayDate(tx.date)} via ${tx.method} (${tx.notes || "Partial Payment"})`).join("\n")
-      : "  • No payments recorded yet.";
-
-    const milestonesScheduleText = milestones.map(m => {
-      const hasMilestoneTx = transactions.some(tx => tx.notes === `${m.date} Milestone`);
-      return `  • ${m.date}: $${m.amount.toLocaleString()} - ${hasMilestoneTx ? "PAID" : "DUE"}`;
-    }).join("\n");
-
-    return `Dear Brother ${attendee.formData.fullName.trim()},
-
-This is a payment update regarding your registration for the BBI Homecoming Reunion 2026. 
-
-You have a remaining balance of $${balanceDue.toLocaleString()} on your registration. Below is a detailed breakdown of your payments to-date and the milestone installment schedule:
-
-[YOUR REGISTRATION DETAILS]
-  • Reference ID: ${attendee.ref}
-  • Selected Package: ${packageName}
-  • Total Registration Cost: $${grandTotal.toLocaleString()}
-
-[PAYMENTS RECORDED TO-DATE]
-${paymentListText}
-  • Total Amount Paid: $${totalPaid.toLocaleString()}
-  • Current Balance Due: $${balanceDue.toLocaleString()}
-
-[REMAINING MILESTONE SCHEDULE]
-${milestonesScheduleText}
-
-Please ensure payments are sent via Zelle to bbihomecoming@gmail.com (or your preferred payment method in coordination with the committee). 
-
-If you have any questions, please reply to this email. We look forward to welcoming you home to Detroit!
-
-Best regards,
-BBI Homecoming Committee`;
+    return generateBalanceDueEmail(attendee).body;
   };
 
   const handleCopyEmailText = (attendee: HistoryEntry, type: "paid_in_full" | "balance_due") => {
@@ -1386,6 +1316,22 @@ BBI Homecoming Committee`;
           </button>
           <button
             type="button"
+            onClick={() => {
+              setEmailTemplatesModalInitialId("paid_in_full_receipt");
+              setIsEmailTemplatesModalOpen(true);
+            }}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl border border-indigo-200 bg-indigo-50/90 hover:bg-indigo-100 text-indigo-900 font-bold text-xs shadow-xs cursor-pointer transition-all"
+            title="Manage and update system email templates"
+            id="open-system-email-templates-btn"
+          >
+            <Mail className="w-3.5 h-3.5 text-indigo-600" />
+            <span>System Emails</span>
+            <span className="bg-indigo-200 text-indigo-950 text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold">
+              {emailTemplates.length}
+            </span>
+          </button>
+          <button
+            type="button"
             onClick={handleExportCSV}
             className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-gray-700 font-bold text-xs shadow-xs hover:bg-gray-50 cursor-pointer transition-all"
           >
@@ -1930,22 +1876,25 @@ BBI Homecoming Committee`;
 
       {/* Slide-over Profile Detail Sheet (Opens from the right to allow the list to be fully expanded) */}
       {selectedAttendee && (() => {
-        const subject = `BBI Homecoming 2026: Registrant Profile Sheet (${selectedAttendee.formData.fullName})`;
-        const emailBody = generateProfileText(selectedAttendee);
+        const profEmail = generateProfileEmail(selectedAttendee);
+        const subject = profEmail.subject;
+        const emailBody = profEmail.body;
         const recipientEmail = selectedAttendee.formData.email;
 
         const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(recipientEmail)}&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(emailBody)}`;
         const mailtoUrl = `mailto:${encodeURIComponent(recipientEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(emailBody)}`;
 
-        // Paid in Full Receipt Email
-        const pifSubject = `BBI Homecoming 2026: Paid In Full Receipt (${selectedAttendee.formData.fullName})`;
-        const pifBody = generatePaidInFullText(selectedAttendee);
+        // Paid in Full Receipt Email (Dynamic & Sanitized)
+        const pifEmail = generatePaidInFullEmail(selectedAttendee);
+        const pifSubject = pifEmail.subject;
+        const pifBody = pifEmail.body;
         const pifGmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(recipientEmail)}&su=${encodeURIComponent(pifSubject)}&body=${encodeURIComponent(pifBody)}`;
         const pifMailtoUrl = `mailto:${encodeURIComponent(recipientEmail)}?subject=${encodeURIComponent(pifSubject)}&body=${encodeURIComponent(pifBody)}`;
 
-        // Balance & Due Dates Reminder Email
-        const balSubject = `BBI Homecoming 2026: Remaining Balance & Milestone Update (${selectedAttendee.formData.fullName})`;
-        const balBody = generateBalanceDueText(selectedAttendee);
+        // Balance & Due Dates Reminder Email (Dynamic & Sanitized)
+        const balEmail = generateBalanceDueEmail(selectedAttendee);
+        const balSubject = balEmail.subject;
+        const balBody = balEmail.body;
         const balGmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(recipientEmail)}&su=${encodeURIComponent(balSubject)}&body=${encodeURIComponent(balBody)}`;
         const balMailtoUrl = `mailto:${encodeURIComponent(recipientEmail)}?subject=${encodeURIComponent(balSubject)}&body=${encodeURIComponent(balBody)}`;
 
@@ -2034,7 +1983,7 @@ BBI Homecoming Committee`;
                                 <p className="text-[10px] text-gray-500 mt-0.5">
                                   Base Package: <span className="font-semibold text-slate-700 font-mono">${pkg?.price || 0}</span>
                                   {selectedAttendee.formData.addDetroitJacket && (
-                                    <> • Detroit Jacket: <span className="font-semibold text-slate-700 font-mono">+$135</span></>
+                                    <> • Chapter Jacket: <span className="font-semibold text-slate-700 font-mono">+$135</span></>
                                   )}
                                 </p>
                               </div>
@@ -2165,7 +2114,21 @@ BBI Homecoming Committee`;
 
                     {/* Manual Email Dispatcher */}
                     <div className="border-t border-gray-100 pt-4 space-y-3">
-                      <span className="text-[9.5px] uppercase font-black text-indigo-900 tracking-wider block">Manual Email Dispatcher</span>
+                      <div className="flex justify-between items-center">
+                        <span className="text-[9.5px] uppercase font-black text-indigo-900 tracking-wider block">Manual Email Dispatcher</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEmailTemplatesModalInitialId("paid_in_full_receipt");
+                            setIsEmailTemplatesModalOpen(true);
+                          }}
+                          className="text-[9.5px] text-indigo-600 hover:text-indigo-800 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                          title="Edit email templates"
+                        >
+                          <Edit3 className="w-2.5 h-2.5" />
+                          <span>Edit Templates</span>
+                        </button>
+                      </div>
                       
                       {/* Email 1: Paid in Full Receipt */}
                       <div className="bg-emerald-50/50 border border-emerald-150 p-3 rounded-xl space-y-2">
@@ -2174,7 +2137,20 @@ BBI Homecoming Committee`;
                             <Check className="w-3.5 h-3.5 text-emerald-600" />
                             Paid in Full Receipt
                           </span>
-                          <span className="text-[8px] bg-emerald-100 text-emerald-850 px-1.5 py-0.2 rounded-full font-black uppercase">Receipt</span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEmailTemplatesModalInitialId("paid_in_full_receipt");
+                                setIsEmailTemplatesModalOpen(true);
+                              }}
+                              className="text-[8.5px] text-emerald-700 hover:text-emerald-900 p-0.5"
+                              title="Edit Paid in Full Template"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                            </button>
+                            <span className="text-[8px] bg-emerald-100 text-emerald-850 px-1.5 py-0.2 rounded-full font-black uppercase">Receipt</span>
+                          </div>
                         </div>
                         <p className="text-[9.5px] text-emerald-805 leading-snug">
                           Pre-populates an email receipt confirming registration balance is fully cleared ($0).
@@ -2226,7 +2202,20 @@ BBI Homecoming Committee`;
                             <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
                             Balance & Due Dates
                           </span>
-                          <span className="text-[8px] bg-amber-100 text-amber-850 px-1.5 py-0.2 rounded-full font-black uppercase">Invoice</span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEmailTemplatesModalInitialId("balance_due_milestones");
+                                setIsEmailTemplatesModalOpen(true);
+                              }}
+                              className="text-[8.5px] text-amber-700 hover:text-amber-900 p-0.5"
+                              title="Edit Balance Due Template"
+                            >
+                              <Edit3 className="w-3 h-3" />
+                            </button>
+                            <span className="text-[8px] bg-amber-100 text-amber-850 px-1.5 py-0.2 rounded-full font-black uppercase">Invoice</span>
+                          </div>
                         </div>
                         <p className="text-[9.5px] text-amber-855 leading-snug">
                           Pre-populates a payment invoice with outstanding balance and upcoming milestone due dates.
@@ -3273,7 +3262,7 @@ BBI Homecoming Committee`;
                         <div>
                           <p className="font-extrabold text-slate-900 text-xs">{currentPkg?.name || "None"}</p>
                           <p className="text-[10.5px] text-gray-500">
-                            {packageChangeAttendee.formData.addDetroitJacket ? "Includes Detroit Jacket (+$135)" : "No Jacket Add-on"}
+                            {packageChangeAttendee.formData.addDetroitJacket ? "Includes Custom Chapter Jacket (+$135)" : "No Jacket Add-on"}
                           </p>
                         </div>
                         <div className="pt-2 border-t border-slate-100 space-y-1 text-[11px]">
@@ -3296,7 +3285,7 @@ BBI Homecoming Committee`;
                         <div>
                           <p className="font-extrabold text-indigo-950 text-xs">{targetPkg?.name}</p>
                           <p className="text-[10.5px] text-indigo-700">
-                            {willHaveJacket ? "Includes Detroit Jacket (+$135)" : "No Jacket Add-on"}
+                            {willHaveJacket ? "Includes Custom Chapter Jacket (+$135)" : "No Jacket Add-on"}
                           </p>
                         </div>
                         <div className="pt-2 border-t border-indigo-150 space-y-1 text-[11px]">
@@ -3409,7 +3398,7 @@ BBI Homecoming Committee`;
                       <div className="flex items-center justify-between">
                         <span className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
                           <ShoppingBag className="w-3.5 h-3.5 text-indigo-600" />
-                          Include Custom Carhartt-Style Detroit Jacket
+                          Include Custom Carhartt-Style Chapter Jacket
                         </span>
                         <span className="font-mono text-xs font-black text-indigo-950">+$135</span>
                       </div>
@@ -3423,7 +3412,7 @@ BBI Homecoming Committee`;
                 <div className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-3 flex items-start gap-2.5">
                   <ShoppingBag className="w-4 h-4 text-indigo-600 flex-shrink-0 mt-0.5" />
                   <p className="text-[10.5px] text-indigo-900 leading-relaxed">
-                    <strong>Detroit Jacket Only Package:</strong> The Custom Detroit Jacket ($135) is the primary item. Box and Event passes are excluded.
+                    <strong>Custom Jacket Only Package:</strong> The Custom Chapter Jacket ($135) is the primary item. Box and Event passes are excluded.
                   </p>
                 </div>
               )}
@@ -3507,6 +3496,24 @@ BBI Homecoming Committee`;
         }}
         allAttendees={history}
         initialSelectedRef={massEmailInitialRef}
+        customTemplates={emailTemplates}
+        onOpenTemplateManager={(templateId) => {
+          if (templateId) setEmailTemplatesModalInitialId(templateId);
+          setIsEmailTemplatesModalOpen(true);
+        }}
+      />
+
+      {/* Email Templates Manager Modal */}
+      <EmailTemplatesModal
+        isOpen={isEmailTemplatesModalOpen}
+        onClose={() => setIsEmailTemplatesModalOpen(false)}
+        templates={emailTemplates}
+        onUpdateTemplates={(updated) => {
+          setEmailTemplates(updated);
+          saveEmailTemplatesToStorage(updated);
+        }}
+        history={history}
+        initialTemplateId={emailTemplatesModalInitialId}
       />
 
       {/* Earmarked Treasury Funds Management Modal */}

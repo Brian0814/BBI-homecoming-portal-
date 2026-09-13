@@ -4,13 +4,15 @@
  */
 
 import React, { useState, useMemo, useRef, useEffect } from "react";
-import { HistoryEntry, EmailLogEntry } from "../types";
+import { HistoryEntry, EmailLogEntry, SystemEmailTemplate } from "../types";
 import { 
   resolveMailMergeTokens, 
   getAttendeePaymentStats, 
   calculateAttendeeGrandTotal,
-  formatDisplayDate 
+  formatDisplayDate,
+  sanitizeEmailText
 } from "../lib/paymentUtils";
+import { DEFAULT_EMAIL_TEMPLATES } from "../lib/emailTemplates";
 import { db } from "../lib/firebase";
 import { doc, setDoc } from "firebase/firestore";
 import { 
@@ -19,7 +21,7 @@ import {
   ExternalLink, FileSpreadsheet, AlertCircle, CheckCircle2,
   ListFilter, RefreshCw, Layers, ArrowRight, Play, Pause,
   CheckCheck, Zap, Clock, ShieldCheck, RotateCcw,
-  StopCircle, AlertTriangle
+  StopCircle, AlertTriangle, Edit3
 } from "lucide-react";
 
 interface MassEmailModalProps {
@@ -28,17 +30,8 @@ interface MassEmailModalProps {
   allAttendees: HistoryEntry[];
   initialSelectedRef?: string;
   onBatchDispatched?: () => void;
-}
-
-interface TemplatePreset {
-  id: string;
-  name: string;
-  category: string;
-  badgeColor: string;
-  description: string;
-  defaultFilter: "all" | "balance_due" | "paid_in_full";
-  subject: string;
-  body: string;
+  customTemplates?: SystemEmailTemplate[];
+  onOpenTemplateManager?: (templateId?: string) => void;
 }
 
 interface RecipientDispatchStatus {
@@ -51,160 +44,7 @@ interface RecipientDispatchStatus {
   error?: string;
 }
 
-const TEMPLATE_PRESETS: TemplatePreset[] = [
-  {
-    id: "balance_due_milestones",
-    name: "Balance Due & Milestone Installment Schedule",
-    category: "Financials",
-    badgeColor: "bg-amber-100 text-amber-900 border-amber-200",
-    description: "Itemized payment notice with outstanding balance, payments received to-date, milestone due dates, and Zelle instructions.",
-    defaultFilter: "balance_due",
-    subject: "BBI Homecoming 2026: Outstanding Balance & Milestone Schedule ({{fullName}})",
-    body: `Dear Brother {{fullName}},
-
-This is a payment update regarding your registration for the BBI Homecoming Reunion 2026.
-
-You currently have a remaining balance of {{balanceDue}} on your registration. Below is your detailed payment status, breakdown of transactions to-date, and the upcoming milestone installment schedule:
-
-[YOUR REGISTRATION DETAILS]
-  • Reference ID: {{ref}}
-  • Selected Package: {{packageName}}
-  • Total Registration Cost: {{grandTotal}}
-  • Current Status: {{statusLabel}}
-
-[PAYMENTS RECORDED TO-DATE]
-{{paymentsList}}
-  • Total Paid: {{totalPaid}}
-  • Current Balance Due: {{balanceDue}}
-
-[MILESTONE INSTALLMENT SCHEDULE]
-{{milestonesSchedule}}
-
-Please submit payments via Zelle to: bbihomecoming@gmail.com (or coordinate with the Homecoming Committee for alternate arrangements). When submitting, please include your Reference ID ({{ref}}) in the memo.
-
-If you have any questions or have already submitted a payment that is not reflected above, please reply directly to this email. We look forward to welcoming you home to Detroit!
-
-Fraternally & Best regards,
-BBI Homecoming Committee`
-  },
-  {
-    id: "paid_in_full_receipt",
-    name: "Paid in Full Official Receipt & Confirmation",
-    category: "Receipt",
-    badgeColor: "bg-emerald-100 text-emerald-900 border-emerald-200",
-    description: "Official receipt confirming $0 balance, package merchandise details, and reunion welcome packet info.",
-    defaultFilter: "paid_in_full",
-    subject: "BBI Homecoming 2026: Official Receipt - PAID IN FULL ({{fullName}})",
-    body: `Dear Brother {{fullName}},
-
-Congratulations! This official receipt confirms that your registration for the BBI Homecoming Reunion 2026 is PAID IN FULL!
-
-We have reconciled your account ledger and your balance is $0.00. Thank you for your prompt payments and steadfast commitment to the Beta Beta Iota Chapter.
-
-[OFFICIAL REGISTRATION RECEIPT]
-  • Reference ID: {{ref}}
-  • Package Selected: {{packageName}}
-  • Package T-Shirt Size: {{shirtSize}}
-  • Detroit Jacket: {{jacketDetails}}
-  • Total Amount Paid: {{grandTotal}}
-  • Remaining Balance: $0.00 (PAID IN FULL)
-
-[SHIPPING & FULFILLMENT ADDRESS]
-{{shippingAddress}}
-
-All homecoming merchandise and event materials are being prepared for you. Stay tuned for further announcements regarding the schedule of brotherhood events, hospitality suites, and Detroit homecoming activities.
-
-Thank you for your leadership and brotherhood. We look forward to welcoming you home to Detroit!
-
-Fraternally & Best regards,
-BBI Homecoming Committee`
-  },
-  {
-    id: "profile_verification",
-    name: "Registration & Custom Sizing Verification",
-    category: "Coordination",
-    badgeColor: "bg-blue-100 text-blue-900 border-blue-200",
-    description: "Verifies sizing, custom jacket line embroidery, shipping address, and special committee requests.",
-    defaultFilter: "all",
-    subject: "BBI Homecoming 2026: Profile & Sizing Verification ({{fullName}})",
-    body: `Dear Brother {{fullName}},
-
-As we finalize our manufacturing and production orders for the BBI Homecoming Reunion 2026 commemorative items, please take a moment to review and verify your attendee profile:
-
-[REGISTRANT PROFILE & SIZING]
-  • Reference ID: {{ref}}
-  • Attendee Name: {{fullName}}
-  • Contact Phone: {{phone}}
-  • Contact Email: {{email}}
-  • Selected Package: {{packageName}}
-  • Box T-Shirt Size: {{shirtSize}}
-  • Custom Jacket Details: {{jacketDetails}}
-
-[SHIPPING DESTINATION]
-{{shippingAddress}}
-
-[SPECIAL REQUESTS / COMMITTEE NOTES]
-{{specialRequests}}
-
-[FINANCIAL LEDGER]
-  • Total Cost: {{grandTotal}}
-  • Total Paid to Date: {{totalPaid}}
-  • Outstanding Balance: {{balanceDue}}
-
-If any of your sizing or custom embroidery information needs adjustment, please reply to this email immediately so our fulfillment team can update your record.
-
-Fraternally & Best regards,
-BBI Homecoming Committee`
-  },
-  {
-    id: "general_announcement",
-    name: "Chapter Announcement & General Update",
-    category: "General",
-    badgeColor: "bg-indigo-100 text-indigo-900 border-indigo-200",
-    description: "General communication with personal merge greeting, registration reference, and custom body text.",
-    defaultFilter: "all",
-    subject: "BBI Homecoming Reunion 2026: Important Chapter Update & Announcements",
-    body: `Dear Brother {{firstName}},
-
-We are excited to share several important updates regarding our upcoming Beta Beta Iota Homecoming Reunion in Detroit!
-
-[ANNOUNCEMENT HIGHLIGHTS]
-  • Detroit Homecoming dates and host hotel room block details are officially locked in.
-  • Commemorative boxes and custom apparel are entering production.
-  • Hospitality suite and brotherhood event schedule will be distributed shortly.
-
-[YOUR REGISTRATION SUMMARY]
-  • Reference ID: {{ref}}
-  • Selected Package: {{packageName}}
-  • Payment Status: {{statusLabel}} (Balance: {{balanceDue}})
-
-Please feel free to reach out to the committee with any questions, or reply directly to this email. Let's make this homecoming our greatest brotherhood gathering yet!
-
-Fraternally,
-BBI Homecoming Committee`
-  },
-  {
-    id: "blank_custom",
-    name: "Custom Blank Mail Merge Template",
-    category: "Custom",
-    badgeColor: "bg-slate-100 text-slate-900 border-slate-200",
-    description: "Start with a clean slate and compose your custom message using dynamic merge tokens.",
-    defaultFilter: "all",
-    subject: "BBI Homecoming 2026 Update for {{fullName}} (Ref: {{ref}})",
-    body: `Dear Brother {{fullName}},
-
-[Type your custom message here. You can click any of the merge token tags above to insert dynamic personalized fields.]
-
-Your Current Registration Details:
-  • Reference ID: {{ref}}
-  • Package: {{packageName}}
-  • Amount Paid: {{totalPaid}}
-  • Balance Due: {{balanceDue}}
-
-Best regards,
-BBI Homecoming Committee`
-  }
-];
+const TEMPLATE_PRESETS: SystemEmailTemplate[] = DEFAULT_EMAIL_TEMPLATES;
 
 const MERGE_TOKENS = [
   { tag: "{{firstName}}", label: "First Name", desc: "e.g. Marcus" },
@@ -230,12 +70,27 @@ export const MassEmailModal: React.FC<MassEmailModalProps> = ({
   onClose,
   allAttendees,
   initialSelectedRef,
-  onBatchDispatched
+  onBatchDispatched,
+  customTemplates,
+  onOpenTemplateManager
 }) => {
+  const activePresets = useMemo(() => {
+    return (customTemplates && customTemplates.length > 0) ? customTemplates : TEMPLATE_PRESETS;
+  }, [customTemplates]);
+
   // Preset & Editor State
   const [selectedPresetId, setSelectedPresetId] = useState<string>("balance_due_milestones");
-  const [subjectTemplate, setSubjectTemplate] = useState<string>(TEMPLATE_PRESETS[0].subject);
-  const [bodyTemplate, setBodyTemplate] = useState<string>(TEMPLATE_PRESETS[0].body);
+  const [subjectTemplate, setSubjectTemplate] = useState<string>(() => activePresets[0]?.subject || "");
+  const [bodyTemplate, setBodyTemplate] = useState<string>(() => activePresets[0]?.body || "");
+
+  // Sync with template changes
+  useEffect(() => {
+    const current = activePresets.find(p => p.id === selectedPresetId);
+    if (current) {
+      setSubjectTemplate(current.subject);
+      setBodyTemplate(current.body);
+    }
+  }, [activePresets, selectedPresetId]);
   
   // Recipient filtering & selection
   const [filterType, setFilterType] = useState<"all" | "balance_due" | "paid_in_full" | "custom">("balance_due");
@@ -311,11 +166,11 @@ export const MassEmailModal: React.FC<MassEmailModalProps> = ({
   }, [allAttendees, filterType, selectedRefIds, filteredAttendees]);
 
   // Preset Selection Handler
-  const handleSelectPreset = (preset: TemplatePreset) => {
+  const handleSelectPreset = (preset: SystemEmailTemplate) => {
     setSelectedPresetId(preset.id);
     setSubjectTemplate(preset.subject);
     setBodyTemplate(preset.body);
-    setFilterType(preset.defaultFilter);
+    setFilterType(preset.defaultFilter as any);
 
     const newSet = new Set<string>();
     allAttendees.forEach(a => {
@@ -435,7 +290,7 @@ export const MassEmailModal: React.FC<MassEmailModalProps> = ({
     isPausedRef.current = false;
     isCancelledRef.current = false;
 
-    const currentPreset = TEMPLATE_PRESETS.find(p => p.id === selectedPresetId);
+    const currentPreset = activePresets.find(p => p.id === selectedPresetId);
     const templateName = currentPreset?.name || "Personalized Update";
 
     // Progressive execution: Dispatches each recipient one after another with smooth live animation
@@ -798,18 +653,32 @@ ${body}
           
           {/* Section 1: Template Presets Selector */}
           <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <span className="text-xs font-black uppercase text-slate-700 tracking-wider flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-brand-blue" />
                 1. Select Communication Preset
               </span>
-              <span className="text-[11px] text-slate-500 font-medium">
-                Choose a pre-configured template or customize freely
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">
+                  Choose a pre-configured template or customize freely
+                </span>
+                {onOpenTemplateManager && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenTemplateManager(selectedPresetId)}
+                    className="flex items-center gap-1 text-[11px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                    title="Edit and manage all system templates"
+                    id="edit-system-templates-from-mass-btn"
+                  >
+                    <Edit3 className="w-3 h-3 text-indigo-600" />
+                    <span>Manage All System Templates</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
-              {TEMPLATE_PRESETS.map((preset) => {
+              {activePresets.map((preset) => {
                 const isSelected = selectedPresetId === preset.id;
                 return (
                   <button
@@ -1352,7 +1221,7 @@ ${body}
                         <div>
                           <span className="text-slate-500 block text-[10.5px]">Active Template:</span>
                           <span className="font-bold text-slate-900 truncate block">
-                            {TEMPLATE_PRESETS.find(p => p.id === selectedPresetId)?.name}
+                            {activePresets.find(p => p.id === selectedPresetId)?.name}
                           </span>
                         </div>
                         <div>

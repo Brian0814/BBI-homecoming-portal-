@@ -86,17 +86,30 @@ export const PACKAGE_OPTIONS: PackageOption[] = [
   },
   {
     id: "jacket-only",
-    name: "Custom Detroit Jacket Only (No Reunion Package)",
+    name: "Custom Chapter Jacket Only (No Reunion Package)",
     price: 0,
     items: [
-      "Custom Carhartt-Style Detroit Jacket ($135 value)",
+      "Custom Carhartt-Style Chapter Jacket ($135 value)",
       "Excludes BBI Homecoming Box (No T-shirt or Merch)",
       "Excludes Full Event Access & Stepshow Tickets",
       "Excludes Tailgate Food & Chapter Donation"
     ],
-    note: "Select this option if you ONLY want to order the customized Detroit Jacket. Total cost is $135 (paid via installments)."
+    note: "Select this option if you ONLY want to order the customized Chapter Jacket. Total cost is $135 (paid via installments)."
   }
 ];
+
+export interface SystemEmailTemplate {
+  id: string;
+  name: string;
+  category: "Financials" | "Receipt" | "Coordination" | "General" | "Custom";
+  badgeColor: string;
+  description: string;
+  defaultFilter: "all" | "balance_due" | "paid_in_full" | "custom";
+  subject: string;
+  body: string;
+  updatedAt?: string;
+  isCustom?: boolean;
+}
 
 export const STATE_LIST = [
   "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", 

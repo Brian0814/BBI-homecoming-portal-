@@ -778,7 +778,7 @@ export function EarmarkedFundsModal({
                 </label>
                 <textarea
                   rows={2}
-                  placeholder="e.g. Deposit for Langston Taylor Alumni Package + Detroit Jacket once confirmed"
+                  placeholder="e.g. Deposit for Langston Taylor Alumni Package + Chapter Jacket once confirmed"
                   value={formNotes}
                   onChange={(e) => setFormNotes(e.target.value)}
                   className="w-full px-3 py-2 text-xs bg-white border border-slate-300 rounded-xl focus:outline-hidden focus:border-brand-blue"
