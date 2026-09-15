@@ -21,7 +21,8 @@ import {
   Users, Trash2, Search, Download, Printer, ArrowUpDown, ChevronDown, 
   Layers, CreditCard, Sparkles, Filter, MoreHorizontal, ShoppingCart, 
   MapPin, Phone, Mail, FileText, ArrowLeft, Ticket, ShoppingBag, Eye, Calendar, X,
-  Send, Copy, Check, Edit, AlertCircle, ArrowLeftRight, PackageCheck, Package, RefreshCw, AlertTriangle, Zap, Clock, DollarSign, RotateCcw, Edit3
+  Send, Copy, Check, Edit, AlertCircle, ArrowLeftRight, PackageCheck, Package, RefreshCw, AlertTriangle, Zap, Clock, DollarSign, RotateCcw, Edit3,
+  FileSpreadsheet, CheckCircle2, Settings2
 } from "lucide-react";
 import { 
   getPaymentMilestones, 
@@ -37,9 +38,11 @@ import {
   saveEmailTemplatesToStorage, 
   renderSystemEmail 
 } from "../lib/emailTemplates";
+import { exportComprehensiveExcelReport } from "../lib/excelExport";
 import { MassEmailModal } from "./MassEmailModal";
 import { EarmarkedFundsModal } from "./EarmarkedFundsModal";
 import { EmailTemplatesModal } from "./EmailTemplatesModal";
+import { ExportReportModal } from "./ExportReportModal";
 import { db, handleFirestoreError, OperationType, cleanFirestoreData } from "../lib/firebase";
 import { collection, query, onSnapshot, doc, setDoc, deleteDoc, getDoc } from "firebase/firestore";
 
@@ -213,6 +216,11 @@ export default function AdminPortal({
   const [isSavingPackageChange, setIsSavingPackageChange] = useState<boolean>(false);
   const [packageChangeError, setPackageChangeError] = useState<string | null>(null);
   const [packageChangeToast, setPackageChangeToast] = useState<{ title: string; message: string } | null>(null);
+
+  // Comprehensive Export States
+  const [isExportReportModalOpen, setIsExportReportModalOpen] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const [exportSuccessMessage, setExportSuccessMessage] = useState<string | null>(null);
 
   // Load history with real-time Firestore sync + local fallback failsafe
   useEffect(() => {
@@ -836,6 +844,10 @@ export default function AdminPortal({
       "Custom Jacket Line Number",
       "Required Initial Deposit ($)",
       "Grand Checkout Total ($)",
+      "Total Amount Paid ($)",
+      "Remaining Balance Due ($)",
+      "Payment Status",
+      "Total Payments Recorded",
       "Special Requests & Allocations"
     ];
 
@@ -843,6 +855,7 @@ export default function AdminPortal({
       const pkg = PACKAGE_OPTIONS.find((p) => p.id === item.formData.selectedPackageId);
       const basePrice = pkg?.price || 0;
       const total = calculateGrandTotal(item.formData);
+      const { totalPaid, balanceDue, statusLabel, transactions } = getAttendeePaymentStats(item);
 
       // Deposit calculations
       const packageDeposit = pkg ? 100 : 0;
@@ -871,6 +884,10 @@ export default function AdminPortal({
         item.formData.jacketLineNumber || "N/A",
         initialDeposit,
         total,
+        totalPaid,
+        balanceDue,
+        statusLabel,
+        transactions.length,
         item.formData.specialRequests || "None"
       ];
     });
@@ -1255,6 +1272,28 @@ export default function AdminPortal({
       return sortDirection === "asc" ? comparison : -comparison;
     });
 
+  const isFiltered = searchTerm.trim().length > 0 || filterPackage !== "all" || filterJacket !== "all";
+
+  // Comprehensive Multi-Sheet Excel (.xlsx) Report download routine
+  const handleExportExcel = (exportFiltered: boolean = false) => {
+    try {
+      setIsExportingExcel(true);
+      const recordsToExport = exportFiltered ? processedRecords : history;
+      exportComprehensiveExcelReport({
+        history: recordsToExport,
+        earmarkedFunds: uniqueEarmarkedFunds,
+        fileName: `BBI_Homecoming_2026_${exportFiltered ? "Filtered" : "Comprehensive"}_Report_${new Date().toISOString().split("T")[0]}.xlsx`
+      });
+      setExportSuccessMessage(`Comprehensive Excel Report (.xlsx) downloaded successfully (${recordsToExport.length} members)!`);
+      setTimeout(() => setExportSuccessMessage(null), 5000);
+    } catch (error) {
+      console.error("Failed to generate Excel report:", error);
+      alert("Failed to export Excel report. Please try again.");
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
   return (
     <div className="space-y-6" id="admin-portal-layer">
       {/* 1. Portal Header Bar */}
@@ -1330,22 +1369,65 @@ export default function AdminPortal({
               {emailTemplates.length}
             </span>
           </button>
+          {/* Download Comprehensive Excel Report */}
+          <div className="inline-flex rounded-xl shadow-xs">
+            <button
+              type="button"
+              onClick={() => handleExportExcel(false)}
+              disabled={isExportingExcel}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-l-xl border border-r-0 border-emerald-600 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs cursor-pointer transition-all active:scale-[0.99]"
+              title="Download comprehensive 5-sheet Excel report (.xlsx) with all member details, payments, and balances"
+              id="download-comprehensive-excel-btn"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-100" />
+              <span>{isExportingExcel ? "Compiling Excel..." : "Download Excel Report (.xlsx)"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsExportReportModalOpen(true)}
+              className="px-2 py-2.5 rounded-r-xl border border-emerald-600 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs cursor-pointer transition-all"
+              title="Custom Export Options (choose worksheets, scope, or CSV)"
+              id="open-export-report-options-btn"
+            >
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
           <button
             type="button"
             onClick={handleExportCSV}
-            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-gray-300 bg-white text-gray-700 font-bold text-xs shadow-xs hover:bg-gray-50 cursor-pointer transition-all"
+            className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl border border-gray-300 bg-white text-gray-700 font-bold text-xs shadow-xs hover:bg-gray-50 cursor-pointer transition-all"
+            title="Download Flat CSV Spreadsheet"
           >
-            <Download className="w-3.5 h-3.5 text-gray-500" /> Excel Spreadsheet (.CSV)
+            <Download className="w-3.5 h-3.5 text-gray-500" />
+            <span>CSV</span>
           </button>
+
           <button
             type="button"
             onClick={handlePrintReport}
-            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-slate-800 text-white font-bold text-xs shadow-md hover:bg-slate-900 cursor-pointer transition-all"
+            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-800 text-white font-bold text-xs shadow-md hover:bg-slate-900 cursor-pointer transition-all"
           >
             <Printer className="w-3.5 h-3.5" /> Printable Report (PDF)
           </button>
         </div>
       </div>
+
+      {/* Export Success Alert Banner */}
+      {exportSuccessMessage && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 px-4 py-3 rounded-xl text-xs font-bold flex items-center justify-between shadow-xs transition-all animate-in fade-in duration-200">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+            <span>{exportSuccessMessage}</span>
+          </div>
+          <button
+            onClick={() => setExportSuccessMessage(null)}
+            className="text-emerald-700 hover:text-emerald-950 p-1 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
 
 
@@ -1640,6 +1722,17 @@ export default function AdminPortal({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleExportExcel(isFiltered)}
+              disabled={isExportingExcel}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10.5px] font-bold cursor-pointer transition-all shadow-3xs"
+              title={isFiltered ? `Export ${processedRecords.length} filtered members to Excel` : "Export all members to Excel"}
+              id="export-active-register-excel-btn"
+            >
+              <FileSpreadsheet className="w-3 h-3 text-emerald-600" />
+              <span>{isFiltered ? `Export Filtered (${processedRecords.length})` : "Export Excel (.xlsx)"}</span>
+            </button>
             <button
               type="button"
               onClick={() => setIsMassEmailModalOpen(true)}
@@ -3530,6 +3623,16 @@ export default function AdminPortal({
         onApplyFundToRegistration={handleApplyEarmarkedFundToRegistration}
         onDeallocateFund={handleDeallocateFund}
         initialTargetRef={earmarkInitialTargetRef}
+      />
+
+      {/* Comprehensive Excel & Custom Export Options Modal */}
+      <ExportReportModal
+        isOpen={isExportReportModalOpen}
+        onClose={() => setIsExportReportModalOpen(false)}
+        allAttendees={history}
+        filteredAttendees={processedRecords}
+        isFiltered={isFiltered}
+        earmarkedFunds={uniqueEarmarkedFunds}
       />
     </div>
   );
