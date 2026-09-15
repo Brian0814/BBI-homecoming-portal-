@@ -29,7 +29,9 @@ export default function ConfirmationStep({
   const grandTotal = basePackagePrice + footballTicketPrice + detroitJacketPrice;
 
   // Deposit calculations
-  const packageDeposit = (selectedPackage && selectedPackage.id !== "jacket-only") ? 100 : 0;
+  const packageDeposit = selectedPackage
+    ? (selectedPackage.id === "jacket-only" ? 0 : (selectedPackage.id === "tshirt-only" ? 25 : 100))
+    : 0;
   const jacketDeposit = formData.addDetroitJacket ? 70 : 0;
   const totalDepositDue = packageDeposit + jacketDeposit;
   const remainingBalance = grandTotal - totalDepositDue;

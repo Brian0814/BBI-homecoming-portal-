@@ -408,7 +408,9 @@ export default function AdminPortal({
     const jacket = formData.addDetroitJacket ? 135 : 0;
     const total = base + jacket;
 
-    const packageDeposit = (selectedPackage && selectedPackage.id !== "jacket-only") ? 100 : 0;
+    const packageDeposit = selectedPackage
+      ? (selectedPackage.id === "jacket-only" ? 0 : (selectedPackage.id === "tshirt-only" ? 25 : 100))
+      : 0;
     const jacketDeposit = formData.addDetroitJacket ? 70 : 0;
     const depositDue = packageDeposit + jacketDeposit;
     const balanceDue = total - depositDue;
@@ -858,7 +860,9 @@ export default function AdminPortal({
       const { totalPaid, balanceDue, statusLabel, transactions } = getAttendeePaymentStats(item);
 
       // Deposit calculations
-      const packageDeposit = pkg ? 100 : 0;
+      const packageDeposit = pkg
+        ? (pkg.id === "jacket-only" ? 0 : (pkg.id === "tshirt-only" ? 25 : 100))
+        : 0;
       const jacketDeposit = item.formData.addDetroitJacket ? 70 : 0;
       const initialDeposit = packageDeposit + jacketDeposit;
 

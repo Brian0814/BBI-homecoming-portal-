@@ -238,7 +238,7 @@ export default function App() {
         stepErrors.selectedPackageId = "The selected package includes a t-shirt. Please go back to Step 2 and select a t-shirt size.";
       } else if (formData.selectedPackageId === "jacket-only") {
         if (!formData.jacketSize || !formData.jacketCrossingYear.trim() || !formData.jacketLineName.trim() || !formData.jacketEntireLineName.trim() || !formData.jacketLineNumber.trim()) {
-          stepErrors.selectedPackageId = "Custom Detroit Jacket Only package requires jacket customization details. Please go back to Step 2 and enter your jacket details.";
+          stepErrors.selectedPackageId = "Custom Chapter Jacket Only package requires jacket customization details. Please go back to Step 2 and enter your jacket details.";
         }
       }
     }

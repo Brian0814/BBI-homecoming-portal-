@@ -85,6 +85,18 @@ export const PACKAGE_OPTIONS: PackageOption[] = [
     note: "Can't make it? Support the chapter from afar. Plus shipping costs apply."
   },
   {
+    id: "tshirt-only",
+    name: "Commemorative Homecoming T-Shirt Only",
+    price: 25,
+    items: [
+      "Official BBI Homecoming Commemorative T-Shirt",
+      "Excludes BBI Homecoming Box & Gift Items",
+      "Excludes Full Event Access & Stepshow Tickets",
+      "Excludes Hospitality Suite & Tailgate Food"
+    ],
+    note: "Official commemorative homecoming t-shirt only ($25). Select your shirt size in Step 2."
+  },
+  {
     id: "jacket-only",
     name: "Custom Chapter Jacket Only (No Reunion Package)",
     price: 0,

@@ -5,7 +5,7 @@
 
 import React from "react";
 import { PackageOption, PACKAGE_OPTIONS } from "../types";
-import { Check, ShieldAlert, Award, Star, Inbox, HelpCircle } from "lucide-react";
+import { Check, ShieldAlert, Award, Star, Inbox, HelpCircle, Shirt, Package } from "lucide-react";
 
 interface PackageStepProps {
   selectedPackageId: string;
@@ -24,6 +24,10 @@ const getPackageIcon = (id: string) => {
       return <Check className="w-6 h-6 text-emerald-600" />;
     case "box-items":
       return <Inbox className="w-6 h-6 text-blue-500" />;
+    case "tshirt-only":
+      return <Shirt className="w-6 h-6 text-indigo-600" />;
+    case "jacket-only":
+      return <Package className="w-6 h-6 text-purple-600" />;
     default:
       return <HelpCircle className="w-6 h-6 text-gray-500" />;
   }
@@ -54,7 +58,7 @@ export default function PackageStep({
           <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-white/10 pb-4">
             <div>
               <span className="inline-flex items-center gap-1 bg-brand-blue text-white text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full border border-blue-400/30 mb-2 shadow-xs">
-                🎁 Included in All Packages
+                🎁 Included in Reunion & Box Packages
               </span>
               <h4 className="font-display font-black text-xl sm:text-2xl uppercase tracking-tight text-white">
                 BBI Homecoming Gift Box
@@ -190,6 +194,11 @@ export default function PackageStep({
                       {pkg.id === "langston-taylor" && (
                         <span className="inline-block mt-1 text-[10px] font-semibold text-brand-blue bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-sm">
                           Premier Alumni Choice
+                        </span>
+                      )}
+                      {pkg.id === "tshirt-only" && (
+                        <span className="inline-block mt-1 text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded-sm">
+                          Commemorative Apparel ($25)
                         </span>
                       )}
                     </div>

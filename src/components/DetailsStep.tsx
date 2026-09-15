@@ -42,6 +42,8 @@ export default function DetailsStep({
           <p className="text-xs text-slate-500 mb-3.5 leading-relaxed">
             {formData.selectedPackageId === "jacket-only"
               ? "You've selected Jacket-Only. A package shirt is not included in this order category."
+              : formData.selectedPackageId === "tshirt-only"
+              ? "The selected size will apply directly to your commemorative homecoming t-shirt ($25)."
               : "The selected size will apply directly to the box shirt included in your core homecoming bag package."}
           </p>
           <div className="relative rounded-md shadow-xs max-w-xs">

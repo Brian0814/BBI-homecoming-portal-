@@ -16,7 +16,7 @@ export function getPaymentMilestones(packageId: string, addJacket: boolean): Pay
 
   // 1. July 19 Milestone (Common across all packages)
   const july19Items: MilestoneItem[] = [];
-  if (packageId !== "jacket-only") {
+  if (packageId !== "jacket-only" && packageId !== "tshirt-only") {
     july19Items.push(
       { name: "Box Printing", amount: 15, isDeposit: true },
       { name: "Shirt", amount: 35, isDeposit: true },
@@ -24,6 +24,8 @@ export function getPaymentMilestones(packageId: string, addJacket: boolean): Pay
       { name: "Rally Towel", amount: 5, isDeposit: true },
       { name: "Engraved Whiskey Glass", amount: 30, isDeposit: true }
     );
+  } else if (packageId === "tshirt-only") {
+    july19Items.push({ name: "Homecoming Commemorative T-Shirt", amount: 25, isDeposit: true });
   }
   if (addJacket) {
     july19Items.push({ name: "Jacket Optional (Deposit)", amount: 70, isDeposit: true });
@@ -170,7 +172,9 @@ export function getAttendeePaymentStats(item: HistoryEntry) {
     statusColor = "bg-emerald-50 text-emerald-800 border-emerald-250";
   } else {
     const selectedPackage = PACKAGE_OPTIONS.find((pkg) => pkg.id === item.formData.selectedPackageId);
-    const packageDeposit = (selectedPackage && selectedPackage.id !== "jacket-only") ? 100 : 0;
+    const packageDeposit = selectedPackage
+      ? (selectedPackage.id === "jacket-only" ? 0 : (selectedPackage.id === "tshirt-only" ? 25 : 100))
+      : 0;
     const jacketDeposit = item.formData.addDetroitJacket ? 70 : 0;
     const requiredDeposit = packageDeposit + jacketDeposit;
 

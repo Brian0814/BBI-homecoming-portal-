@@ -94,7 +94,9 @@ export function exportComprehensiveExcelReport({
     const { totalPaid, balanceDue, statusLabel, transactions } = getAttendeePaymentStats(attendee);
 
     // Initial deposit requirement calculation
-    const packageDeposit = (pkg && pkg.id !== "jacket-only") ? 100 : 0;
+    const packageDeposit = pkg
+      ? (pkg.id === "jacket-only" ? 0 : (pkg.id === "tshirt-only" ? 25 : 100))
+      : 0;
     const jacketDeposit = attendee.formData.addDetroitJacket ? 70 : 0;
     const requiredDeposit = packageDeposit + jacketDeposit;
 
